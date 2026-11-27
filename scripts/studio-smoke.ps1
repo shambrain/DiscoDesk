@@ -198,17 +198,29 @@ try {
             }
         }
 
-        # 4. Close the Studio (graceful, falling back to a kill).
-        $closed = $false
-        try { $closed = $studio.CloseMainWindow() } catch { $closed = $false }
-        if (-not $closed) {
+        # 4. Close the Studio. The invariant under test is that the engine
+        #    survives the Studio going away — not that the OS delivers WM_CLOSE
+        #    promptly. On a hosted runner the window appears and closes but the
+        #    process can linger past a 15 s wait (observed: mainWindowHandle
+        #    present, title correct, process still alive). So: attempt a
+        #    graceful close, wait, then terminate. A lingering graceful close is
+        #    surfaced as a warning, never as a silent pass, and a genuine
+        #    lifecycle regression still fails the "process is gone" assertion.
+        $closedGracefully = $false
+        try { $closedGracefully = $studio.CloseMainWindow() } catch { $closedGracefully = $false }
+
+        if ($studio.WaitForExit(15000)) {
+            Write-Host "  ok   Studio exited after the window closed (code $($studio.ExitCode))" -ForegroundColor Green
+            Assert-Equal -Actual $studio.ExitCode -Expected 0 -What 'Studio exit code after a graceful close'
+        } else {
+            Write-Host '  WARN graceful close did not exit the Studio within 15s; terminating it' -ForegroundColor Yellow
+            Write-GhCommand 'warning' 'studio-smoke: the window close did not exit the Studio within 15s in this environment; the process was terminated so the lifecycle check could continue'
             try { $studio.Kill() } catch { }
+            $studio.WaitForExit(10000) | Out-Null
         }
-        $studio.WaitForExit(10000) | Out-Null
-        Assert-True -Condition $studio.HasExited -What 'Studio process exited after the window closed'
-        if ($studio.HasExited) {
-            Write-Host "       Studio exit code: $($studio.ExitCode)"
-        }
+
+        $studio.Refresh()
+        Assert-True -Condition $studio.HasExited -What 'Studio process is gone before the engine check'
     }
 
     # 5. The invariant: the engine must survive the Studio going away.
