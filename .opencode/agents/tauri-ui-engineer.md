@@ -16,3 +16,8 @@ Build a calm, premium control center with a one-click path: choose wallpaper, an
 Separate Home, Library, Vibe Studio, Audio and Performance/Diagnostics. Explain platform capability limits in the UI rather than presenting unsupported controls. Provide reduced-motion, pause, source lock, ignore list, intensity and clear privacy status. Preserve keyboard navigation, contrast, focus, scalable layouts and multi-monitor settings.
 
 Tauri communicates with the engine over the documented local IPC contract. Do not put audio rendering or the wallpaper GPU loop in the WebView. Closing Studio must not stop the engine. Validate all UI input and handle engine disconnection, permission denial and async job cancellation.
+
+
+## Calm desktop UX and creator controls
+
+Follow ARCHITECTURE.md Addendum A9 and docs/DESKTOP_EXPERIENCE_SPEC.md. Keep Studio calm and OS-integrated. Build quick mode first; put frequency mapping and effect curves in Advanced. Support light/dark/system theme, high contrast, keyboard navigation, screen readers and reduced motion. The Magic Wand is a native platform surface, not a Tauri always-on-top window; Studio configures it and displays status.

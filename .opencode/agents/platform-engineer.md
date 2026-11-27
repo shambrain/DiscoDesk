@@ -18,3 +18,10 @@ macOS: gate Core Audio process taps and permissions by supported OS version. Tes
 Linux: distinguish PipeWire monitor capture, app stream capture, PulseAudio compatibility, KDE Plasma wallpaper integration, X11 and compositor-specific Wayland protocols. Never claim universal Wayland support.
 
 Every adapter must expose supported capabilities, reasons for unavailable features, structured diagnostics and a safe fallback. Add mocks for unit tests, then verify on real OS/runtime versions before marking support complete.
+
+
+## Desktop wallpaper watcher and wand
+
+For M2, implement a per-monitor wallpaper observer that emits change hints only; query authoritative OS state separately. On Windows, use IDesktopWallpaper per monitor, combine WM_SETTINGCHANGE and other hints with low-frequency reconciliation, and test Settings changes, slideshow, Explorer restart, display hotplug and DPI. Do not rely on a single undocumented registry value or an event-only design.
+
+Prototype the Magic Wand separately from the wallpaper surface. It must be tiny, no-activate, hit-test only its visible region, hide behind foreground apps/fullscreen and have tray/keyboard/accessibility alternatives. Never use a full-screen transparent click-capturing overlay. If reliability is not proven, defer the visual wand and ship tray/keyboard quick action.

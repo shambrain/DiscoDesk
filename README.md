@@ -56,3 +56,12 @@ Preserve the user's source image. Never write captured PCM to disk by default. N
 - [Skills](https://opencode.ai/docs/skills/)
 - [Project instructions](https://opencode.ai/docs/instructions/)
 - [Configuration](https://opencode.ai/docs/config/)
+
+
+## Ambient desktop roadmap
+
+Later M2/M3 work adds per-monitor wallpaper change detection, content-hash cache reuse, opt-in automatic reaction, a desktop Magic Wand quick action, creator presets and quiet local notifications. These are specified but not implemented and are deliberately scheduled after the Windows MVP is stable.
+
+- [DESKTOP_EXPERIENCE_SPEC.md](docs/DESKTOP_EXPERIENCE_SPEC.md)
+- [AI_TOOLING_DECISION.md](docs/AI_TOOLING_DECISION.md)
+- [PROJECT_MAP.md](docs/PROJECT_MAP.md)

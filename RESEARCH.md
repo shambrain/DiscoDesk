@@ -305,3 +305,174 @@ The sources below are the primary references used for this audit. Project README
 
 - [ISteamUGC API](https://partner.steamgames.com/doc/api/ISteamUGC)
 - [Steam Workshop implementation guide](https://partner.steamgames.com/doc/features/workshop/implementation)
+
+---
+
+## 12. Desktop automation and OS integration research
+
+### Windows wallpaper identity and observation
+
+Microsoft's IDesktopWallpaper COM interface exposes monitor enumeration and per-monitor wallpaper query. GetWallpaper(NULL) can return S_FALSE if different monitors use different wallpapers or a slideshow is running, so query every monitor deliberately.
+
+Sources:
+- https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idesktopwallpaper
+- https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-idesktopwallpaper-getwallpaper
+- https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-idesktopwallpaper-getmonitordevicepathcount
+- https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange
+
+WM_SETTINGCHANGE is a system-setting broadcast for some changes and does not always tell an application precisely which setting changed. A Microsoft Q&A response dated 11 February 2026 reports that some Windows 11 Settings wallpaper changes did not broadcast WM_SETTINGCHANGE and suggests monitoring HKCU\\Control Panel\\Desktop\\Wallpaper with RegNotifyChangeKeyValue, then querying IDesktopWallpaper. This is support-forum evidence, not a stable API guarantee.
+
+Conclusion: use OS change hints plus low-frequency authoritative per-monitor reconciliation. Do not depend exclusively on WM_SETTINGCHANGE, registry watching or rapid polling.
+
+### Windows wand feasibility
+
+- https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles documents WS_EX_NOACTIVATE; a top-level window with that style does not become foreground on click. It is not in normal keyboard navigation by default, so keyboard/tray/screen-reader alternatives are necessary.
+- https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features documents layered windows and alpha composition.
+- https://learn.microsoft.com/en-us/windows/apps/design/widgets explains that the Windows Widgets Board is a separate flyout opened from taskbar/Win+W/swipe, not a persistent arbitrary desktop button.
+- https://learn.microsoft.com/en-us/windows/apps/develop/widgets/widget-providers documents widget provider capabilities.
+
+A small no-activate layered overlay is a prototype direction, not a verified product implementation. Test z-order, Explorer, click routing, icons, taskbar, fullscreen, DPI and accessibility before shipping. Never use a full-screen click-capturing overlay.
+
+### macOS
+
+- https://developer.apple.com/documentation/appkit/nsworkspace/desktopimageurl%28for%3A%29 returns the desktop image URL for a specified NSScreen and must be called on the main thread.
+- https://developer.apple.com/documentation/appkit/nsworkspace documents desktop-image management.
+- https://developer.apple.com/design/human-interface-guidelines/the-menu-bar documents the native menu-bar surface for persistent quick actions.
+
+The reviewed public sources establish a per-screen wallpaper query but not a universal wallpaper-change notification for all target versions. Use conservative reconciliation unless a public supported event is independently verified. Menu-bar quick action is the safe first implementation.
+
+### Linux
+
+- https://github.com/KDE/plasma-desktop/blob/master/design/wallpaper describes wallpaper plugins as components painting desktop containments.
+- https://develop.kde.org/docs/plasma/scripting/api/ documents per-desktop wallpaper configuration and screen-specific desktop objects.
+- https://develop.kde.org/docs/plasma/ distinguishes desktop widgets/Plasmoids from wallpaper plugins.
+
+KDE offers native extension points for a desktop widget/wallpaper provider. Other desktop environments require individual adapters. A generic Wayland feature claim is not justified by one protocol or compositor.
+
+### Native local notifications
+
+- https://learn.microsoft.com/en-us/windows/apps/develop/notifications/ recommends Windows App SDK AppNotificationManager for new WinUI/WPF/WinForms/unpackaged Win32 desktop applications. Local notifications are distinct from cloud push.
+- https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/toast-notifications-overview documents actionable local notifications and constraints.
+- https://developer.apple.com/documentation/usernotifications is Apple's notification framework.
+- https://specifications.freedesktop.org/notification/latest-single/ is the freedesktop Desktop Notifications D-Bus specification, version 1.3.
+
+Core DiscoDesk notifications can be entirely local. They still need user permission, quiet hours, deduplication, severity and rate limits.
+
+## 13. Visual design and comfort research
+
+Primary sources:
+- Fluent 2 motion: https://fluent2.microsoft.design/motion
+- Fluent 2 materials: https://fluent2.microsoft.design/material
+- Fluent 2 color: https://fluent2.microsoft.design/color
+- Fluent 2 typography: https://fluent2.microsoft.design/typography
+- Apple HIG motion: https://developer.apple.com/design/human-interface-guidelines/motion
+- WCAG 2.2: https://www.w3.org/TR/WCAG22/
+
+Design conclusions:
+1. Neutral base surfaces, comfortable light/dark themes, readable hierarchy and a restrained accent.
+2. Mica for appropriate opaque Windows 11 surfaces; Acrylic for transient surfaces; provide platform fallbacks.
+3. Purposeful brief animation, no decorative constant movement.
+4. Permanent pause/stop and reduced-motion behavior that reduces zoom, parallax, depth, particles and UI transitions.
+5. Keyboard, focus, screen-reader, scaling, contrast and high-contrast support.
+6. Wallpaper colors may affect previews and minor accents, not text contrast.
+7. Advanced DSP language should remain behind advanced mode.
+
+WCAG flash criteria are minimum web-content conformance references, not proof of universal visual comfort.
+
+## 14. Coding-agent decision: Claude Code vs OpenCode
+
+Research date: 27 November 2026.
+
+### Official capabilities
+
+OpenCode documents project agents, per-agent model settings, skills, MCP, plugins, permissions, worktrees, multiple sessions, background subagents and local runtimes:
+- https://opencode.ai/docs/agents
+- https://opencode.ai/docs/skills
+- https://opencode.ai/docs/permissions
+- https://opencode.ai/docs/tools
+- https://opencode.ai/docs/providers
+- https://opencode.ai/docs/models
+
+Claude Code documents custom subagents, skills, hooks, MCP, plan workflows, settings and parallel work:
+- https://code.claude.com/docs/en/overview
+- https://code.claude.com/docs/en/sub-agents
+- https://code.claude.com/docs/en/skills
+- https://code.claude.com/docs/en/hooks
+- https://code.claude.com/docs/en/settings
+
+For this repository, OpenCode fits the existing multi-provider/local-model/MCP structure and already has an agent/skill system. Claude Code is strong and integrated for Anthropic-first work, but migrating would add a second repository configuration layer. The decision is specific to DiscoDesk, not a claim that OpenCode is universally superior.
+
+### DeepSeek current official details
+
+Current model IDs and prices are documented at https://api-docs.deepseek.com/quick_start/pricing/ and checked on 27 November 2026:
+- deepseek-flash serves DeepSeek-V4.1-Flash-1017.
+- deepseek-v4-pro serves DeepSeek-V4-Pro-0813.
+- Both advertise 1M context and tool calls; Flash supports vision and Pro does not.
+- Off-peak per million tokens: Flash $0.15 input miss, $0.003 cache hit, $0.60 output; Pro $0.66, $0.022, $1.98.
+- Peak rates double during designated weekday windows.
+
+Official OpenCode integration:
+https://api-docs.deepseek.com/quick_start/agent_integrations/opencode/
+
+Official Claude Code integration:
+https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/
+
+DeepSeek maps Claude model aliases to its own models when using the Anthropic-compatible endpoint. A Claude alias routed to DeepSeek is not Claude Opus.
+
+OpenCode issue #55684 reports tool-call reliability complaints for the built-in DeepSeek OpenAI-compatible route and documents a custom Anthropic-compatible provider workaround:
+https://github.com/anomalyco/opencode/issues/55684
+Treat it as a concrete smoke-test risk, not proof all requests fail.
+
+### Claude subscription
+
+Current official pricing:
+https://claude.com/pricing
+https://support.claude.com/en/articles/11049741-what-is-the-max-plan
+https://support.claude.com/en/articles/14552983-models-usage-and-limits-in-claude-code
+
+The individual page lists Pro at $20 monthly (annual discount available), Max at $100 for 5x Pro usage, and Ultra at $200 for 10x Pro usage. Actual usage limits vary with model, effort, files and conversation length. Claude Code subscription usage and API-key usage are separate billing routes. Do not assume subscription auth is available to third-party harnesses unless official provider support confirms it.
+
+### Real developer reports (anecdotal)
+
+- A March 2026 same-model refactoring comparison reported OpenCode/Sonnet ahead on one task and OpenCode/Codex ahead on cost in a 10k-line app. One user experiment, not a controlled general benchmark: https://www.reddit.com/r/opencodeCLI/comments/1s3mi6l/opencode_vs_claudecode_as_agentic_harness_test/
+- A March 2026 OpenCode user valued control/visibility and fine-tunable subagents but reported weaker default planning and a snapshot storage surprise: https://www.reddit.com/r/opencodeCLI/comments/1ryl1l6/my_brief_and_bad_experience_with_claude_code/
+- A November 2026 Claude Code user warned that automatic edits/reviews can make code more complex and harder to understand: https://www.reddit.com/r/ClaudeCode/comments/1xzdi6c/claude_code_is_design_to_make_you_dump/
+- A November 2026 plan/execution workflow post describes Claude Code for plan-only and OpenCode for implementation, but comes from a tool builder and is not independent benchmarking: https://www.reddit.com/r/ClaudeCode/comments/1xom28d/claude_code_as_the_planner_opencode_as_the/
+
+These reports are biased and conflict. Their useful message is that workflow visibility, task decomposition, tests and human review matter as much as model choice.
+
+### Recommendation
+
+Keep OpenCode as the primary harness. Assign a frontier reasoning model to the coordinator/architect and independent review; use DeepSeek Flash for bounded implementation and DeepSeek Pro for harder coding/reasoning; use LM Studio for low-risk local assistance. Claude Code can be a separate plan/review environment if the user later buys a subscription, but do not run it and OpenCode concurrently as source writers on the same worktree.
+
+Do not pin unverified model IDs in the repository. Connect providers and choose exact models from OpenCode /models. Measure actual acceptance quality and rework before buying a higher subscription.
+
+### Controlled benchmark
+
+Use the same clean commit, task, context and acceptance criteria in isolated worktrees. Test:
+1. Explain a seeded bug without editing.
+2. Implement one DSP module plus deterministic tests.
+3. Implement one renderer change plus preview evidence.
+4. Diagnose a deliberate cross-module regression.
+5. Review a native lifecycle/security patch read-only.
+
+Record accepted criteria, actual test results, regressions, manual corrections, retries, time, changed lines, input/cache/output tokens and billed cost. The winner is the configuration that produces verified correct work with less human rework—not the one that emits more code.
+
+## 15. Research source register additions
+
+Platform:
+- Microsoft IDesktopWallpaper, WM_SETTINGCHANGE, window styles, layered windows and App Notifications (links in section 12).
+- Apple NSWorkspace, UserNotifications and Human Interface Guidelines (links in section 12).
+- KDE Plasma wallpaper/widgets and freedesktop notifications (links in section 12).
+
+Design:
+- Fluent 2 Motion/Material/Color/Typography.
+- Apple HIG Motion.
+- WCAG 2.2.
+
+AI coding workflow:
+- OpenCode official docs.
+- Claude Code official docs.
+- DeepSeek official pricing/integration docs.
+- OpenCode issue #55684.
+- Reddit reports explicitly labeled as anecdotal in section 14.

@@ -76,3 +76,12 @@ The reviewer agents are read-only. Do not ask them to implement fixes. Have them
 ## Response format for engineering tasks
 
 State the current gate, files inspected, plan and delegated ownership. Then implement or coordinate implementation. Finish with changed paths, commands run, pass/fail counts, measured performance, unsupported cases, open risks and the next acceptance gate. Never claim work was tested when it was not.
+
+
+## Desktop automation sequencing
+
+The wallpaper watcher, automatic reaction, cache reuse, wand and notifications are M2 features. Do not implement them during Gates 0–6. Require M1 stabilization evidence first. Delegate implementation to desktop-experience-engineer after platform, cache and lifecycle contracts are agreed.
+
+## Context discipline
+
+Use docs/PROJECT_MAP.md and read task-specific architecture sections. Do not reread the whole research/architecture corpus for bounded tasks. Ask subagents for concise findings, changed paths and tests rather than full raw logs or document dumps.

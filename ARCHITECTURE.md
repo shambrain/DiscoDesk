@@ -920,3 +920,195 @@ Include silence, pink noise, kick-only, snare-only, bassline, dense master, lo-f
 10. Performance claims are published only from reproducible benchmarks.
 11. Model weights and all third-party dependencies must pass commercial-license review before bundling.
 12. Keep the system small, modular and testable; do not build a plugin scripting system until the core workflow is proven.
+
+---
+
+# Addendum A — Ambient Desktop Experience
+
+**Status:** Planned milestone; not implemented. This addendum extends the existing architecture without removing or weakening any original requirement. Implementation begins only after the Windows MVP, image analysis/cache, engine IPC and desktop-host lifecycle have passed stabilization.
+
+## A1. Product intent and boundaries
+
+DiscoDesk should become an unobtrusive desktop companion. After initial setup, users should not need to open Studio every time their OS wallpaper changes. The engine observes wallpaper changes, reuses cached image analysis when possible, prepares a safe default visual recipe and continues reacting to the selected audio source.
+
+A small **Magic Wand** quick action should be available on the desktop where the OS permits a safe, native implementation. Clicking it re-evaluates the current wallpaper and applies the best available reaction without requiring the full Studio window.
+
+Keep three distinct responsibilities:
+
+1. Wallpaper observation: discover a possible OS wallpaper change.
+2. Image analysis/cache: resolve the source, calculate or reuse image-derived masks/depth/palette.
+3. Reaction policy: decide whether auto-reaction is enabled and which saved preset/profile applies.
+
+A wallpaper change must never override manual pause, explicit user opt-out, per-display disable, per-wallpaper disable, excluded applications or reduced-motion settings.
+
+## A2. Platform-neutral contracts and state machine
+
+Add an isolated desktop-automation module or crate. It owns wallpaper-change observation, per-display state, quick-action commands and reaction-policy evaluation. It does not own audio capture, DSP or GPU rendering.
+
+Suggested data contracts:
+- DesktopWallpaperSnapshot: display_id, source_uri, wallpaper_kind, observed_at, optional source_revision.
+- WallpaperKind: StillImage, Slideshow, Dynamic, SolidColor, Unknown.
+- WallpaperChangeHint: optional display_id, reason and timestamp.
+- WallpaperChangeReason: OsSettingEvent, RegistryOrConfigWatch, SlideshowTransition, DisplayTopologyChanged, PeriodicReconciliation, UserRequestedRefresh.
+- AutoReactionMode: Off, AskOnNewWallpaper, ReactAutomatically.
+- WallpaperReactionPolicy: enabled, mode, default preset, respect_manual_pause, per-display overrides and excluded wallpaper hashes.
+
+The watcher emits a bounded **change hint**, not a trusted file path or decoded image. Re-query platform state authoritatively, per monitor, after receiving the hint.
+
+Required state machine:
+
+Watching -> ChangeHint -> DebounceAndCoalesce -> QueryPerDisplaySnapshots -> WaitForStableSource -> ValidateAndHash -> CacheLookup -> LoadCachedRecipe OR DeterministicAnalysisAndQueueDepthJob -> EvaluateUserPolicy -> ApplyPreset -> Active / Disabled / NeedsAttention.
+
+Requirements:
+- Coalesce duplicate events for the same display/source. Never queue one analysis job per repeated notification.
+- A newly observed image may still be copied or rewritten. Verify that the source has stabilized before decoding.
+- If source is missing, corrupt, unsupported, inaccessible, virtual, cloud-only or dynamically generated without a stable image, preserve the OS wallpaper and show a quiet status.
+- Never modify, rename, move, re-encode or delete the source wallpaper.
+- No network image fetch or cloud inference.
+- Auto-reaction is an explicit preference. Explain it during onboarding; do not silently enable it.
+- Manual pause and per-display/per-wallpaper opt-out take precedence.
+- If depth analysis is pending, use a conservative deterministic 2D recipe. Blend in depth later without a jump.
+- All work is cancellable, bounded and joined on shutdown, logout or session teardown.
+
+## A3. Content-addressed analysis cache
+
+Use image content identity, not filename identity. Recommended cache identity combines SHA-256 of image bytes with decoder schema, analysis schema, exact model/checkpoint hash and preprocessing version.
+
+Keep image-derived maps separate from monitor-specific render transforms. The same image can be reused on several displays with different aspect ratios and safe motion margins.
+
+Cache may contain normalized image metadata, optional quantized depth/confidence maps, luminance/highlight/edge/saliency masks, particle-safe regions, palette, user protection masks, analyzer provenance and cache accounting.
+
+Cache requirements:
+- Atomic staged writes and validation before final rename.
+- Reject partial, malformed, mismatched-version and hash-invalid entries.
+- Bounded disk budget and LRU eviction; never evict active or user-pinned entries.
+- User controls for pin, reanalyse, clear and remove an analysis.
+- Version invalidation must preserve source artwork and saved user presets.
+- Cache failure falls back to reanalysis; it never prevents the original wallpaper from displaying.
+- Do not store captured PCM or send image information to cloud services.
+
+## A4. Windows wallpaper observer
+
+Windows is the first implementation target.
+
+Use the documented IDesktopWallpaper COM interface to enumerate monitors and query the wallpaper per monitor. GetWallpaper(NULL) can return S_FALSE when monitors use different images or a slideshow is running; do not assume a single global wallpaper string.
+
+Combine multiple signals:
+1. WM_SETTINGCHANGE as a best-effort system-setting hint.
+2. A narrowly scoped registry change watch as a supplementary hint where justified.
+3. Low-frequency authoritative per-monitor reconciliation.
+4. Reconciliation after display topology, session, sleep/resume and relevant shell events.
+
+A Microsoft Q&A response dated 11 February 2026 reports that some Windows 11 Settings wallpaper changes may not broadcast WM_SETTINGCHANGE and suggests registry monitoring plus IDesktopWallpaper re-query. That is support-forum evidence, not a documented Windows contract. Event-only observation is therefore insufficient; conservative reconciliation is mandatory.
+
+Test standard image selection, per-monitor image, slideshow, Windows 11 Settings, theme/personalization changes, Spotlight-like source, sleep/resume, Explorer restart and display hotplug.
+
+## A5. Magic Wand desktop surface
+
+The wand must be a separate, tiny native quick-action surface. It is not the wallpaper renderer, a Tauri always-on-top window or a full-screen transparent overlay.
+
+Windows prototype:
+- Investigate a small, borderless, layered top-level window with no-activate/tool-window behavior, such as WS_EX_NOACTIVATE and WS_EX_LAYERED.
+- Show only when the desktop is the visible active surface; hide behind ordinary applications, secure desktop, lock screen and fullscreen apps.
+- The hit-test region must be limited to the visible button. It must not intercept clicks outside the control.
+- Never steal focus, cover the taskbar or make the wallpaper surface topmost over ordinary windows.
+- Support dragging/repositioning and selectable corners. Default to lower-right safe inset above the taskbar.
+- Recover or hide safely on Explorer restart, monitor hotplug, DPI change, rotation and sleep/resume.
+- Multi-monitor instances require explicit user choice and must not duplicate one global action.
+- Provide tray, keyboard and accessible alternatives. A no-activate overlay must not be the only way to invoke the feature.
+- If z-order or click behavior cannot be guaranteed, ship tray/keyboard quick action and defer the visual overlay.
+
+Windows Widgets are not a substitute for this exact UI: the official Widgets Board is a separate flyout opened by taskbar, Win+W or swipe, not a permanently pinned desktop button.
+
+## A6. macOS and Linux capability strategy
+
+macOS: query each screen using NSWorkspace.desktopImageURL(for:) on the main thread. The reviewed public sources establish a per-screen query API but do not establish a universal wallpaper-changed notification for every target macOS release. Use conservative reconciliation unless a documented public event is verified. Prefer a native menu-bar extra as the first always-available quick action. Desktop-level overlay is optional only after Spaces, Finder, focus, accessibility and fullscreen tests.
+
+KDE Plasma: investigate a native Plasmoid or wallpaper-provider integration. KDE documents desktop widgets and wallpaper plugins as native extension points. Keep this as a platform adapter.
+
+GNOME, Xfce and other X11/Wayland desktops require separate capability probes and desktop-specific adapters. A tray/menu action is the fallback. Never claim universal Wayland support based on one compositor protocol.
+
+Every platform reports wallpaper observation, per-monitor identity, quick-action surface, hit testing and notification capabilities. The UI must not expose unsupported controls.
+
+## A7. Wand UX and interaction
+
+The wand is a small, quiet entry point. Clicking it:
+1. Re-queries the current wallpaper on that monitor.
+2. Resolves its content hash and cache.
+3. Applies the saved per-wallpaper profile or user default on cache hit.
+4. On cache miss, starts deterministic analysis and optional local depth inference.
+5. Uses the 2D fallback while depth analysis runs.
+6. Reuses current eligible audio source and fades into the response.
+7. Shows a compact state: Reacting, Analysing, Paused, Unsupported, Needs attention.
+
+Popover actions: Make React, Pause/Resume, Change Vibe, Exclude Wallpaper, Open Studio and Hide Wand.
+
+Do not reset manual configuration on wand click. Full Studio opens only when detailed tuning is requested.
+
+## A8. Presets and creator ecosystem
+
+Make saved vibes a first-class capability. Separate:
+
+- **Vibe preset (.ddpreset):** portable audio-feature-to-effect mappings, envelopes/ballistics, effect strengths, comfort profile, palette behavior and metadata. Does not require the creator's wallpaper.
+- **Wallpaper package (.ddpkg):** artwork plus optional analysis assets and wallpaper-specific profile. Sharing artwork requires explicit intent and distribution rights.
+
+Preset schema includes stable ID, version, name, creator, description, tags/category, input features and normalization, mapping curves, allowlisted renderer effects, amplitude bounds, attack/release, smoothing, particle limits, motion/luminance comfort metadata, reduced-motion fallback and preview metadata.
+
+Users can create, duplicate, rename, tag, favorite, import, export, migrate and delete presets. Provide simple quick mode and advanced live mapping editor.
+
+Workshop packages are validated declarative data only. Do not permit arbitrary DLLs, executables, native plugins, unrestricted scripts or user-supplied WGSL in the initial format.
+
+Validate archive paths, hashes, decompressed sizes, entry counts, schema, effect IDs, parameter ranges, version compatibility and metadata lengths before applying content. Local preset operation must work with Steam absent/offline. A .ddpreset must not include a creator's wallpaper. A .ddpkg with artwork requires explicit rights confirmation.
+
+Support creator identity, attribution, version history, remixes/forks, tags and optional license metadata. Do not force a particular genre or visual aesthetic.
+
+## A9. Smart local notifications
+
+Add a local notification policy service. Events never need to be sent to a cloud service.
+
+Classes:
+- Silent: wallpaper changed and cache hit; update wand/status only.
+- Informational: new analysis completed; optional, off by default for slideshow.
+- Action required: audio permission denied or selected source unavailable.
+- Recoverable: model failed but deterministic fallback is active; notify once.
+- Critical: wallpaper host cannot recover; notify once with recovery action.
+
+Deduplicate by event type and stable subject ID. Apply per-event cooldown, quiet hours, global mute, per-monitor controls and a notification budget. Never notify every slideshow transition, cache hit, audio transient or repeated error. Keep a local status history for events suppressed by quiet hours.
+
+Windows: investigate Windows App SDK AppNotificationManager for local desktop notifications. macOS: UserNotifications. Linux: freedesktop Desktop Notifications D-Bus. All actions use validated IPC and cannot execute arbitrary shell/package content.
+
+Smart detection should surface meaningful changes such as source loss, wallpaper changes, fullscreen pause, display/renderer fallback, cache pressure or required user action. Prefer a status indicator to a toast.
+
+## A10. Calm Studio UX
+
+Studio should feel soothing, premium, modern and integrated—not like a constantly animated gaming dashboard.
+
+- Neutral surfaces, comfortable dark/light themes, strong typography hierarchy and one controlled accent family.
+- Wallpaper-derived palette may tint previews and small accents only; it must not make text contrast unpredictable.
+- Use Mica for appropriate opaque Windows 11 surfaces and Acrylic for transient flyouts where supported; provide solid/blurred fallback elsewhere.
+- Avoid excessive glow, noisy gradients, giant all-caps labels and decorative animation.
+- Home answers: current wallpaper, audio source, reaction state and pause action.
+- Library provides wallpaper/preset browsing, search, tags, favorites and cache status.
+- Vibe Studio groups Motion, Depth, Light, Particles, Audio Response, Comfort and Advanced Mapping.
+- Audio shows the actual capture capability; Performance explains why rendering is paused/throttled.
+- Respect OS theme, high contrast, keyboard navigation, visible focus, screen readers, scaling and reduced motion.
+- Status is never conveyed by color or animation alone.
+- Permanent Pause/Stop and reduced-motion controls remain easy to locate.
+
+This follows Fluent 2 guidance on purposeful/natural motion and platform materials, Apple HIG motion guidance, and WCAG flash requirements. WCAG thresholds are minimum conformance references, not a universal comfort guarantee.
+
+## A11. Milestones
+
+**M1 — Working Windows MVP prerequisite:** Gates 0–6 pass, real wallpaper reacts to real system audio, image cache works, engine runs independently from Studio, pause/reconnect/recovery pass, and a beta soak-test report records CPU/GPU/RAM/frame-time/crash/recovery evidence.
+
+**M2 — Ambient Desktop Experience:** per-monitor observer, content-hash cache reuse, background analysis, opt-in reaction policy, Windows wand prototype, tray/keyboard fallback, quick popover, native notifications, slideshow/multi-monitor/Explorer/fullscreen/icon tests.
+
+**M3 — Creator ecosystem:** local preset authoring/import/export, .ddpreset migration/validation, Steam Workshop upload/download, attribution/remix/version/license metadata and explicit artwork rights controls.
+
+Wand is deliberately scheduled after M1. It must not destabilize the desktop before the native wallpaper host and cache are proven.
+
+---
+
+# Addendum B — implementation status
+
+Wallpaper observer, automatic reaction, Magic Wand, smart notifications and Workshop preset authoring are specified but NOT implemented. Keep all their acceptance boxes unchecked until actual code and real OS tests exist.
