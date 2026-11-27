@@ -1,6 +1,7 @@
 [package]
 name = "dd-diagnostics"
 description = "DiscoDesk local diagnostics: privacy-preserving events and rotating local log sink."
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

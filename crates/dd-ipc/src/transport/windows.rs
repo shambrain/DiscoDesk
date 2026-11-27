@@ -10,11 +10,11 @@
 //! D:P(A;;GA;;;OW)(A;;GA;;;SY)
 //! ```
 //!
-//! * `D:P` — a protected DACL: the descriptor's own DACL is authoritative and
+//! * `D:P` - a protected DACL: the descriptor's own DACL is authoritative and
 //!   is not merged with the parent's.
-//! * `(A;;GA;;;OW)` — generic all to `OWNER RIGHTS`, i.e. the principal that
+//! * `(A;;GA;;;OW)` - generic all to `OWNER RIGHTS`, i.e. the principal that
 //!   created the pipe.
-//! * `(A;;GA;;;SY)` — generic all to `LOCAL SYSTEM`.
+//! * `(A;;GA;;;SY)` - generic all to `LOCAL SYSTEM`.
 //!
 //! There is deliberately **no** `WD` (`Everyone`), `BU` (`BUILTIN\Users`) or
 //! `AN` (`Anonymous`) ACE, so no other principal can open the pipe.
@@ -22,33 +22,49 @@
 //! `PIPE_REJECT_REMOTE_CLIENTS` is set so that a client on another machine
 //! cannot connect even if the ACL were somehow permissive.
 //!
-//! The pipe name is derived from the current user's SID so that two users on
-//! the same machine never collide, and a per-process suffix is appended so
-//! that two engine instances owned by the same user do not collide either.
+//! The pipe name includes a sanitised user SID so that two users on the same
+//! machine never share an endpoint.
+//!
+//! # API version
+//!
+//! Every signature here is taken from the generated bindings of the `windows`
+//! crate version pinned in the workspace, which wraps the Win32 calls in
+//! typed newtypes and `Result` returns. The notable consequences:
+//!
+//! * `ReadFile`/`WriteFile` take a slice, not a raw pointer plus length.
+//! * `CreateFileW` returns `Result<HANDLE>`; `CreateNamedPipeW` returns a bare
+//!   `HANDLE` that must be checked against `INVALID_HANDLE_VALUE`.
+//! * `PIPE_ACCESS_DUPLEX` is a `FILE_FLAGS_AND_ATTRIBUTES`, while the pipe mode
+//!   flags are `NAMED_PIPE_MODE`.
+//! * `LocalFree` returns the handle rather than a status code.
 
 use std::ffi::c_void;
+use std::mem::size_of;
 
-use windows::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, INVALID_HANDLE_VALUE, LocalFree};
 use windows::Win32::Security::Authorization::{
-    ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-    DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SDDL_REVISION_1,
+    ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
+    ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo, SDDL_REVISION_1,
     SE_FILE_OBJECT,
 };
 use windows::Win32::Security::{
-    GetTokenInformation, PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
+    DACL_SECURITY_INFORMATION, GetTokenInformation, OBJECT_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
 };
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE,
-    FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_MODE,
+    OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
 };
 use windows::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, NAMED_PIPE_MODE,
-    PIPE_ACCESS_DUPLEX, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
+    ConnectNamedPipe, CreateNamedPipeW, NAMED_PIPE_MODE, PIPE_READMODE_BYTE,
+    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
 };
-use windows::Win32::System::Threading::OpenProcessToken;
+use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentProcessId, OpenProcessToken};
+use windows::core::{BOOL, PCWSTR, PWSTR};
 
 use crate::error::{IpcError, IpcResult};
-use crate::frame::{self, Frame, FRAME_HEADER_BYTES, MAX_FRAME_BYTES};
+use crate::frame::{self, FRAME_HEADER_BYTES, Frame};
+use crate::protocol::PROTOCOL_VERSION;
 use crate::transport::{Listener, Transport};
 
 /// The SDDL used for every DiscoDesk named pipe.
@@ -60,22 +76,40 @@ pub const PIPE_SDDL: &str = "D:P(A;;GA;;;OW)(A;;GA;;;SY)";
 /// The prefix of every DiscoDesk named pipe.
 pub const PIPE_PREFIX: &str = r"\\.\pipe\discodesk-engine";
 
-/// The size of the pipe's OS-level buffers. Large enough for a maximum frame,
+/// The size of the pipe's OS-level buffers. Large enough for several frames,
 /// small enough to bound the kernel memory a client can pin.
 const PIPE_BUFFER_BYTES: u32 = 64 * 1024;
 
-/// How long a pending `ConnectNamedPipe` waits before the accept loop polls
-/// again. Short enough that a shutdown is observed promptly.
-const CONNECT_POLL_MILLIS: u32 = 200;
+/// `PIPE_UNLIMITED_INSTANCES`.
+///
+/// This must be greater than 1 even though Gate 0 serves one client at a time:
+/// the accept loop creates the *replacement* listening instance while the
+/// previously accepted instance is still connected. With a limit of 1 the
+/// replacement cannot be created and the accepted connection is lost.
+///
+/// Concurrency is still bounded by the accept loop, which serves connections
+/// serially, and by the endpoint ACL.
+const PIPE_MAX_INSTANCES: u32 = 255;
+
+/// The combined pipe mode: byte stream, byte read mode, blocking waits, and
+/// remote clients rejected.
+fn pipe_mode() -> NAMED_PIPE_MODE {
+    NAMED_PIPE_MODE(
+        PIPE_TYPE_BYTE.0 | PIPE_READMODE_BYTE.0 | PIPE_WAIT.0 | PIPE_REJECT_REMOTE_CLIENTS.0,
+    )
+}
 
 /// An owned Windows HANDLE that is closed exactly once.
+///
+/// A handle equal to `INVALID_HANDLE_VALUE` is treated as absent, so a value
+/// moved around during instance rotation never closes a non-handle.
 #[derive(Debug)]
 struct OwnedHandle(HANDLE);
 
 impl OwnedHandle {
-    /// Takes ownership of `handle`.
+    /// Takes ownership of `handle`, rejecting an invalid one.
     fn new(handle: HANDLE) -> Option<Self> {
-        if handle == INVALID_HANDLE_VALUE || handle.is_invalid() {
+        if handle.is_invalid() || handle == INVALID_HANDLE_VALUE {
             None
         } else {
             Some(Self(handle))
@@ -90,11 +124,14 @@ impl OwnedHandle {
 
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
-        // SAFETY: `self.0` is a handle this type owns exclusively and it is
-        // dropped exactly once, because `OwnedHandle` is not `Copy` and the
-        // handle is never handed out by value.
+        if self.0.is_invalid() || self.0 == INVALID_HANDLE_VALUE {
+            return;
+        }
+        // SAFETY: `self.0` is a valid handle this type owns exclusively. It is
+        // closed exactly once because `OwnedHandle` is not `Copy` and the handle
+        // is never handed out by value.
         unsafe {
-            let _ = windows::Win32::Foundation::CloseHandle(self.0);
+            let _ = CloseHandle(self.0);
         }
     }
 }
@@ -108,55 +145,58 @@ struct OwnedSecurityDescriptor(PSECURITY_DESCRIPTOR);
 
 impl OwnedSecurityDescriptor {
     /// Builds a descriptor from an SDDL string.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe: the returned descriptor owns its own allocation
-    /// and is freed by `Drop`.
     fn from_sddl(sddl: &str) -> IpcResult<Self> {
         let wide = to_wide(sddl);
-
-        let mut descriptor: PSECURITY_DESCRIPTOR = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
+        let mut descriptor = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
 
         // SAFETY:
         // * `wide` is a valid NUL-terminated UTF-16 string that outlives the
         //   call.
-        // * `descriptor` is a valid out-pointer that is only read after this
-        //   call reports success.
-        // * On failure the function does not write to `descriptor`, and the
-        //   `None` branch returns without freeing anything.
-        let result = unsafe {
+        // * `descriptor` is a valid out-pointer; the API only writes it when it
+        //   returns `Ok`, and the error branch constructs no `Self`, so nothing
+        //   is freed on failure.
+        unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                windows::core::PCWSTR(wide.as_ptr()),
+                PCWSTR(wide.as_ptr()),
                 SDDL_REVISION_1,
                 &mut descriptor,
                 None,
             )
-        };
-
-        result.map_err(|err| {
-            IpcError::Platform(format!("could not build the pipe security descriptor: {err}"))
+        }
+        .map_err(|err| {
+            IpcError::Platform(format!(
+                "could not build the pipe security descriptor: {err}"
+            ))
         })?;
 
         Ok(Self(descriptor))
     }
 
-    /// The raw pointer handed to `CreateNamedPipeW`.
-    fn as_ptr(&self) -> *const PSECURITY_DESCRIPTOR {
-        &self.0
+    /// The `SECURITY_ATTRIBUTES` that hands this descriptor to
+    /// `CreateNamedPipeW`.
+    ///
+    /// `bInheritHandle` is false: a child process must not inherit the ability
+    /// to create or open the engine endpoint.
+    fn attributes(&self) -> SECURITY_ATTRIBUTES {
+        SECURITY_ATTRIBUTES {
+            nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).unwrap_or(0),
+            lpSecurityDescriptor: self.0.0,
+            bInheritHandle: BOOL(0),
+        }
     }
 }
 
 impl Drop for OwnedSecurityDescriptor {
     fn drop(&mut self) {
+        if self.0.0.is_null() {
+            return;
+        }
         // SAFETY: `self.0` was produced by
-        // `ConvertStringSecurityDescriptorToSecurityDescriptorW`, which
-        // allocates with `LocalAlloc`. `LocalFree` is the matching deallocator
-        // and is called exactly once because this type is not `Copy`.
+        // `ConvertStringSecurityDescriptorToSecurityDescriptorW`, which allocates
+        // with `LocalAlloc`. `LocalFree` is the matching deallocator and is
+        // called exactly once because this type is not `Copy`.
         unsafe {
-            let _ = windows::Win32::Foundation::LocalFree(Some(windows::Win32::Foundation::HLOCAL(
-                self.0.0.cast::<c_void>(),
-            )));
+            let _ = LocalFree(Some(HLOCAL(self.0.0)));
         }
     }
 }
@@ -168,24 +208,52 @@ fn to_wide(value: &str) -> Vec<u16> {
     wide
 }
 
+/// Reads a NUL-terminated wide string and frees it with `LocalFree`.
+///
+/// # Safety
+///
+/// `raw` must be a `LocalAlloc`-allocated, NUL-terminated wide string that the
+/// caller does not use again. This function takes ownership and frees it.
+unsafe fn take_wide_string(raw: PWSTR) -> String {
+    if raw.0.is_null() {
+        return String::new();
+    }
+
+    // SAFETY: the caller guarantees a NUL-terminated allocation; scanning stops
+    // at the terminator and never runs past it.
+    let text = unsafe {
+        let mut len = 0_usize;
+        while *raw.0.add(len) != 0 {
+            len += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(raw.0, len))
+    };
+
+    // SAFETY: `raw` was allocated with `LocalAlloc` by the Win32 call that
+    // produced it. `LocalFree` is the matching deallocator; ownership is taken
+    // here, so it is freed exactly once.
+    unsafe {
+        let _ = LocalFree(Some(HLOCAL(raw.0.cast::<c_void>())));
+    }
+
+    text
+}
+
 /// Returns the SID string of the current process token's user.
 ///
-/// This is the authoritative source for "who am I" on Windows. The SID is
-/// read from the process token rather than guessed from a name, so it is
-/// correct for domain, local and Azure AD accounts alike.
+/// The SID is read from the process token rather than guessed from a name, so
+/// it is correct for domain, local and Azure AD accounts alike.
 fn current_user_sid() -> IpcResult<String> {
     let mut token = HANDLE::default();
 
     // SAFETY:
     // * `token` is a valid out-pointer for a HANDLE.
-    // * The pseudo-handle for the current process is always valid.
+    // * `GetCurrentProcess` returns a pseudo-handle that is always valid and
+    //   must not be closed.
     unsafe {
-        OpenProcessToken(
-            windows::Win32::Foundation::GetCurrentProcess(),
-            TOKEN_QUERY,
-            &mut token,
-        )
-        .map_err(|err| IpcError::Platform(format!("could not open the process token: {err}")))?;
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).map_err(|err| {
+            IpcError::Platform(format!("could not open the process token: {err}"))
+        })?;
     }
 
     let token = OwnedHandle::new(token)
@@ -193,18 +261,13 @@ fn current_user_sid() -> IpcResult<String> {
 
     let mut needed = 0_u32;
 
-    // Sizing call: a null buffer asks the API for the required size.
+    // Sizing call: a null buffer asks the API for the required size, and the
+    // resulting "insufficient buffer" error is the documented outcome.
     //
-    // SAFETY: `token.raw()` is a valid open token handle and the null buffer
-    // is the documented way to request the required size.
+    // SAFETY: `token.raw()` is a valid open token handle; `None` is the
+    // documented way to request the required size.
     unsafe {
-        let _ = GetTokenInformation(
-            token.raw(),
-            windows::Win32::Security::TokenUser,
-            None,
-            0,
-            &mut needed,
-        );
+        let _ = GetTokenInformation(token.raw(), TokenUser, None, 0, &mut needed);
     }
 
     if needed == 0 {
@@ -216,12 +279,12 @@ fn current_user_sid() -> IpcResult<String> {
     let mut buffer = vec![0_u8; needed as usize];
 
     // SAFETY:
-    // * `buffer` is a writable allocation of exactly `needed` bytes.
+    // * `buffer` is a writable allocation of at least `needed` bytes.
     // * `needed` is the size the API requested for `TokenUser`.
     unsafe {
         GetTokenInformation(
             token.raw(),
-            windows::Win32::Security::TokenUser,
+            TokenUser,
             Some(buffer.as_mut_ptr().cast::<c_void>()),
             needed,
             &mut needed,
@@ -229,64 +292,40 @@ fn current_user_sid() -> IpcResult<String> {
         .map_err(|err| IpcError::Platform(format!("could not read the token user: {err}")))?;
     }
 
-    // The `TOKEN_USER` structure is at the start of the buffer.
+    // `TOKEN_USER` sits at the start of the buffer, and its `Sid` points into the
+    // same allocation, which stays alive until `sid_to_string` returns.
     //
-    // SAFETY: the API wrote a `TOKEN_USER` into `buffer` and the layout of
-    // `TOKEN_USER` is a single `SID_AND_ATTRIBUTES` whose `Sid` is a pointer
-    // into the same allocation. `buffer` is not moved while `sid` is alive.
-    let sid = {
-        let token_user = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
-        token_user.User.Sid
-    };
+    // SAFETY: the API wrote a `TOKEN_USER` into `buffer`, the buffer is at least
+    // `needed` bytes and properly aligned for `TOKEN_USER` because the API wrote
+    // one there, and `buffer` is not moved while `sid` is alive.
+    let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
 
-    sid_to_string(sid)
+    // SAFETY: `sid` points into `buffer`, which is alive for the duration of
+    // this call and is not moved here.
+    unsafe { sid_to_string(sid) }
 }
 
-/// Converts a SID into its `S-1-…` string form.
+/// Converts a SID into its `S-1-...` string form.
 ///
 /// # Safety
 ///
-/// `sid` must point at a valid SID structure that outlives the call.
+/// `sid` must point at a valid SID that outlives the call.
 unsafe fn sid_to_string(sid: PSID) -> IpcResult<String> {
-    let mut raw: *mut u16 = std::ptr::null_mut();
+    let mut raw = PWSTR::null();
 
     // SAFETY:
     // * `sid` points at a live SID owned by the token buffer.
-    // * `raw` is a valid out-pointer that is only read after success.
-    // * On success the API allocates with `LocalAlloc`, which `LocalFree`
-    //   releases below.
+    // * `raw` is a valid out-pointer; the API allocates the string with
+    //   `LocalAlloc` and ownership passes to `take_wide_string`.
     unsafe {
-        windows::Win32::Security::Authorization::ConvertSidToStringSidW(sid, &mut raw)
-            .map_err(|err| IpcError::Platform(format!("could not stringify the user SID: {err}")))?;
+        ConvertSidToStringSidW(sid, &mut raw).map_err(|err| {
+            IpcError::Platform(format!("could not stringify the user SID: {err}"))
+        })?;
+        Ok(take_wide_string(raw))
     }
-
-    // SAFETY: `raw` is a valid NUL-terminated wide string allocated by the
-    // API above. The length is computed by scanning to the terminator.
-    let text = unsafe {
-        let mut len = 0_usize;
-        while *raw.add(len) != 0 {
-            len += 1;
-        }
-        let slice = std::slice::from_raw_parts(raw, len);
-        String::from_utf16_lossy(slice)
-    };
-
-    // SAFETY: `raw` was allocated by `LocalAlloc` inside
-    // `ConvertSidToStringSidW`; `LocalFree` is the matching deallocator.
-    unsafe {
-        let _ = windows::Win32::Foundation::LocalFree(Some(
-            windows::Win32::Foundation::HLOCAL(raw.cast::<c_void>()),
-        ));
-    }
-
-    Ok(text)
 }
 
-/// Builds the pipe name for the current user and a per-process suffix.
-///
-/// The user SID part guarantees that two users on one machine never share an
-/// endpoint. The suffix guarantees that two engine processes owned by the
-/// same user do not collide either.
+/// Builds the pipe name for the current user and a suffix.
 #[must_use]
 pub fn pipe_name(suffix: &str) -> String {
     let sid = current_user_sid().unwrap_or_else(|_| String::from("unknown"));
@@ -298,112 +337,117 @@ pub fn pipe_name(suffix: &str) -> String {
 }
 
 /// A listener that accepts named-pipe connections.
+#[derive(Debug)]
 pub struct WindowsListener {
     path: String,
-    handle: OwnedHandle,
-    /// The instance number of the pipe currently being created.
-    instance: u32,
+    /// The pending pipe instance. `None` only transiently, while an accepted
+    /// instance is being rotated out, or permanently if a replacement could not
+    /// be created.
+    handle: Option<OwnedHandle>,
+    /// Why the listener stopped listening, if it did. Reported by the next
+    /// `accept` so a failure is never silently swallowed.
+    degraded: Option<String>,
 }
+
+// SAFETY: every Win32 call on the contained handle happens through `&mut self`,
+// which the borrowed `Listener`/`Transport` API guarantees is exclusive, so the
+// handle is never used from two threads at once. The handle is closed exactly
+// once by `OwnedHandle::drop`.
+unsafe impl Send for WindowsListener {}
 
 impl WindowsListener {
     /// Creates a named pipe and prepares to accept clients.
-    ///
-    /// The pipe is created with [`PIPE_SDDL`] so that only the owner and
-    /// `LOCAL SYSTEM` can connect.
     pub fn bind(path: &str) -> IpcResult<Self> {
-        let descriptor = OwnedSecurityDescriptor::from_sddl(PIPE_SDDL)?;
-
-        let wide_path = to_wide(path);
-
-        // SAFETY:
-        // * `wide_path` is a valid NUL-terminated UTF-16 string.
-        // * `descriptor` is a live security descriptor for the duration of
-        //   the call.
-        // * The handle is checked for `INVALID_HANDLE_VALUE` immediately
-        //   afterwards and is closed exactly once by `OwnedHandle`.
-        let handle = unsafe {
-            CreateNamedPipeW(
-                windows::core::PCWSTR(wide_path.as_ptr()),
-                PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                1,
-                PIPE_BUFFER_BYTES,
-                PIPE_BUFFER_BYTES,
-                0,
-                descriptor.as_ptr(),
-            )
-        };
-
-        let handle = OwnedHandle::new(handle).ok_or_else(|| {
-            IpcError::EndpointUnavailable(format!(
-                "could not create the named pipe {path}; it may already be in use"
-            ))
-        })?;
-
+        let handle = create_pipe_instance(path)?;
         Ok(Self {
             path: path.to_owned(),
-            handle,
-            instance: 0,
+            handle: Some(handle),
+            degraded: None,
         })
     }
 
     /// The raw handle of the pending pipe instance.
-    fn raw(&self) -> HANDLE {
-        self.handle.raw()
+    fn raw(&self) -> IpcResult<HANDLE> {
+        if let Some(reason) = &self.degraded {
+            return Err(IpcError::EndpointUnavailable(format!(
+                "the pipe listener is no longer listening: {reason}"
+            )));
+        }
+        self.handle
+            .as_ref()
+            .map(OwnedHandle::raw)
+            .ok_or_else(|| IpcError::Platform("the pipe listener has no instance".to_owned()))
     }
+}
 
-    /// Creates the next pipe instance so that a second client can connect
-    /// while the first is being served.
-    fn create_next_instance(&mut self) -> IpcResult<()> {
-        let descriptor = OwnedSecurityDescriptor::from_sddl(PIPE_SDDL)?;
-        let wide_path = to_wide(&self.path);
+/// Creates one pipe instance with the protected security descriptor.
+fn create_pipe_instance(path: &str) -> IpcResult<OwnedHandle> {
+    let descriptor = OwnedSecurityDescriptor::from_sddl(PIPE_SDDL)?;
+    let attributes = descriptor.attributes();
+    let wide_path = to_wide(path);
 
-        // SAFETY: identical invariants to `bind`: the wide path is valid and
-        // NUL-terminated, the descriptor outlives the call, and the returned
-        // handle is validated and owned exactly once.
-        let handle = unsafe {
-            CreateNamedPipeW(
-                windows::core::PCWSTR(wide_path.as_ptr()),
-                PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                1,
-                PIPE_BUFFER_BYTES,
-                PIPE_BUFFER_BYTES,
-                0,
-                descriptor.as_ptr(),
-            )
-        };
+    // SAFETY:
+    // * `wide_path` is a valid NUL-terminated UTF-16 string that outlives the
+    //   call.
+    // * `attributes` is a live `SECURITY_ATTRIBUTES` whose descriptor outlives
+    //   the call.
+    // * `CreateNamedPipeW` returns a bare handle, which is validated immediately
+    //   and owned by `OwnedHandle` afterwards.
+    let handle = unsafe {
+        CreateNamedPipeW(
+            PCWSTR(wide_path.as_ptr()),
+            PIPE_ACCESS_DUPLEX,
+            pipe_mode(),
+            PIPE_MAX_INSTANCES,
+            PIPE_BUFFER_BYTES,
+            PIPE_BUFFER_BYTES,
+            0,
+            Some(&attributes),
+        )
+    };
 
-        let handle = OwnedHandle::new(handle).ok_or_else(|| {
-            IpcError::EndpointUnavailable(format!(
-                "could not create the next instance of the named pipe {}",
-                self.path
-            ))
-        })?;
-
-        self.handle = handle;
-        Ok(())
-    }
+    OwnedHandle::new(handle).ok_or_else(|| {
+        IpcError::EndpointUnavailable(format!(
+            "could not create the named pipe {path}; it may already be in use"
+        ))
+    })
 }
 
 impl Listener for WindowsListener {
     fn accept(&mut self) -> IpcResult<Box<dyn Transport>> {
-        // Wait for a client. The pipe was created with `PIPE_WAIT`, so
-        // `ConnectNamedPipe` blocks until a client connects.
+        let raw = self.raw()?;
+
+        // The pipe was created with `PIPE_WAIT`, so `ConnectNamedPipe` blocks
+        // until a client connects.
         //
-        // SAFETY: `self.raw()` is a live pipe handle owned by this listener.
+        // SAFETY: `raw` is a live pipe handle owned by this listener.
         unsafe {
-            ConnectNamedPipe(self.raw(), None)
-                .map_err(|err| IpcError::Platform(format!("could not accept a pipe client: {err}")))?;
+            ConnectNamedPipe(raw, None).map_err(|err| {
+                IpcError::Platform(format!("could not accept a pipe client: {err}"))
+            })?;
         }
 
-        // Hand the current instance to the caller and create a fresh one for
-        // the next client.
-        let connected = std::mem::replace(
-            &mut self.handle,
-            OwnedHandle(INVALID_HANDLE_VALUE),
-        );
-        self.create_next_instance()?;
+        // Hand the connected instance to the caller now, then create a
+        // replacement so the endpoint keeps listening. The replacement is
+        // created *after* the handoff on purpose: creating it first would give
+        // the OS two listening instances, and a client could connect to the one
+        // this loop is not blocked on.
+        let connected = self
+            .handle
+            .take()
+            .ok_or_else(|| IpcError::Platform("the pipe instance vanished".to_owned()))?;
+
+        match create_pipe_instance(&self.path) {
+            Ok(replacement) => self.handle = Some(replacement),
+            Err(err) => {
+                // The connection we just accepted is still usable, so serve it
+                // rather than dropping it. The listener is now degraded: the
+                // cause is recorded and returned by the next `accept` instead
+                // of being swallowed.
+                self.handle = None;
+                self.degraded = Some(err.to_string());
+            }
+        }
 
         Ok(Box::new(WindowsStream {
             handle: connected,
@@ -417,39 +461,21 @@ impl Listener for WindowsListener {
 }
 
 /// A connected named-pipe stream.
+#[derive(Debug)]
 pub struct WindowsStream {
     handle: OwnedHandle,
     path: String,
 }
 
+// SAFETY: every Win32 call on the contained handle happens through `&mut self`
+// (see `Transport`), so it is never used concurrently. `OwnedHandle` closes it
+// exactly once.
+unsafe impl Send for WindowsStream {}
+
 impl WindowsStream {
     /// Opens an existing named pipe as a client.
     pub fn connect(path: &str) -> IpcResult<Self> {
-        let wide_path = to_wide(path);
-
-        // SAFETY:
-        // * `wide_path` is a valid NUL-terminated UTF-16 string.
-        // * The returned handle is validated and owned exactly once.
-        let handle = unsafe {
-            CreateFileW(
-                windows::core::PCWSTR(wide_path.as_ptr()),
-                FILE_GENERIC_READ | FILE_GENERIC_WRITE,
-                FILE_SHARE_MODE(0),
-                None,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                None,
-            )
-        };
-
-        let handle = handle.map_err(|err| {
-            IpcError::EndpointUnavailable(format!("could not open the named pipe {path}: {err}"))
-        })?;
-
-        let handle = OwnedHandle::new(handle).ok_or_else(|| {
-            IpcError::EndpointUnavailable(format!("the named pipe {path} returned an invalid handle"))
-        })?;
-
+        let handle = open_pipe(path)?;
         Ok(Self {
             handle,
             path: path.to_owned(),
@@ -462,37 +488,56 @@ impl WindowsStream {
     }
 }
 
+/// Opens an existing pipe for read/write without inheriting the handle.
+fn open_pipe(path: &str) -> IpcResult<OwnedHandle> {
+    let wide_path = to_wide(path);
+
+    // SAFETY:
+    // * `wide_path` is a valid NUL-terminated UTF-16 string.
+    // * `CreateFileW` returns `Result`, so the invalid-handle case is already
+    //   handled before `OwnedHandle` takes ownership.
+    let handle = unsafe {
+        CreateFileW(
+            PCWSTR(wide_path.as_ptr()),
+            FILE_GENERIC_READ.0 | FILE_GENERIC_WRITE.0,
+            FILE_SHARE_MODE(0),
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+    }
+    .map_err(|err| {
+        IpcError::EndpointUnavailable(format!("could not open the named pipe {path}: {err}"))
+    })?;
+
+    OwnedHandle::new(handle).ok_or_else(|| {
+        IpcError::EndpointUnavailable(format!("the named pipe {path} returned an invalid handle"))
+    })
+}
+
 /// Reads exactly `buffer.len()` bytes, mapping a clean EOF to `PeerClosed`.
 fn read_exact(handle: HANDLE, buffer: &mut [u8]) -> IpcResult<()> {
     let mut read_total = 0_usize;
 
     while read_total < buffer.len() {
+        let mut bytes_read = 0_u32;
+
         // SAFETY:
         // * `handle` is a live pipe handle.
-        // * `buffer[read_total..]` is a valid, exclusively borrowed region of
-        //   at least one byte (the loop condition guarantees it).
-        // * The `ReadFile` call is issued with the exact remaining length.
-        let read = unsafe {
-            let mut bytes_read = 0_u32;
-            let ok = windows::Win32::Storage::FileSystem::ReadFile(
+        // * `&mut buffer[read_total..]` is an exclusively borrowed region of at
+        //   least one byte, so the API cannot write past the buffer.
+        unsafe {
+            windows::Win32::Storage::FileSystem::ReadFile(
                 handle,
-                Some(buffer[read_total..].as_mut_ptr().cast::<c_void>()),
-                (buffer.len() - read_total) as u32,
+                Some(&mut buffer[read_total..]),
                 Some(&mut bytes_read),
                 None,
             )
             .map_err(|err| IpcError::Io(std::io::Error::other(err.to_string())))?;
+        }
 
-            if ok.is_false() {
-                return Err(IpcError::Io(std::io::Error::other(
-                    "ReadFile failed on the named pipe".to_owned(),
-                )));
-            }
-
-            bytes_read
-        };
-
-        if read == 0 {
+        if bytes_read == 0 {
             return if read_total == 0 {
                 Err(IpcError::PeerClosed)
             } else {
@@ -503,7 +548,7 @@ fn read_exact(handle: HANDLE, buffer: &mut [u8]) -> IpcResult<()> {
             };
         }
 
-        read_total += read as usize;
+        read_total += bytes_read as usize;
     }
 
     Ok(())
@@ -514,37 +559,29 @@ fn write_exact(handle: HANDLE, buffer: &[u8]) -> IpcResult<()> {
     let mut written_total = 0_usize;
 
     while written_total < buffer.len() {
+        let mut bytes_written = 0_u32;
+
         // SAFETY:
         // * `handle` is a live pipe handle.
-        // * `buffer[written_total..]` is a valid, exclusively borrowed region.
-        // * The `WriteFile` call is issued with the exact remaining length.
-        let written = unsafe {
-            let mut bytes_written = 0_u32;
-            let ok = windows::Win32::Storage::FileSystem::WriteFile(
+        // * `&buffer[written_total..]` is a valid, immutably borrowed region, so
+        //   the API cannot read past the buffer.
+        unsafe {
+            windows::Win32::Storage::FileSystem::WriteFile(
                 handle,
-                Some(buffer[written_total..].as_ptr().cast::<c_void>()),
-                (buffer.len() - written_total) as u32,
+                Some(&buffer[written_total..]),
                 Some(&mut bytes_written),
                 None,
             )
             .map_err(|err| IpcError::Io(std::io::Error::other(err.to_string())))?;
+        }
 
-            if ok.is_false() {
-                return Err(IpcError::Io(std::io::Error::other(
-                    "WriteFile failed on the named pipe".to_owned(),
-                )));
-            }
-
-            bytes_written
-        };
-
-        if written == 0 {
+        if bytes_written == 0 {
             return Err(IpcError::Io(std::io::Error::other(
                 "the named pipe accepted no bytes".to_owned(),
             )));
         }
 
-        written_total += written as usize;
+        written_total += bytes_written as usize;
     }
 
     Ok(())
@@ -553,15 +590,14 @@ fn write_exact(handle: HANDLE, buffer: &[u8]) -> IpcResult<()> {
 impl Transport for WindowsStream {
     fn send_frame(&mut self, frame: &Frame) -> IpcResult<()> {
         let encoded = frame::encode(frame.version, &frame.payload)?;
-        write_exact(self.raw(), &encoded)?;
-        Ok(())
+        write_exact(self.raw(), &encoded)
     }
 
     fn recv_frame(&mut self) -> IpcResult<Frame> {
         let mut header = [0_u8; FRAME_HEADER_BYTES];
         read_exact(self.raw(), &mut header)?;
 
-        let payload_len = frame::peek_payload_len(&header, frame.version)?;
+        let payload_len = frame::peek_payload_len(&header, PROTOCOL_VERSION)?;
 
         let mut payload = vec![0_u8; payload_len];
         if payload_len > 0 {
@@ -569,7 +605,7 @@ impl Transport for WindowsStream {
         }
 
         Ok(Frame {
-            version: frame.version,
+            version: PROTOCOL_VERSION,
             payload,
         })
     }
@@ -581,59 +617,44 @@ impl Transport for WindowsStream {
 
 impl Drop for WindowsStream {
     fn drop(&mut self) {
-        // SAFETY: `self.handle` is a live pipe handle owned by this type.
-        // `DisconnectNamedPipe` on an already-disconnected pipe fails, which
-        // is harmless here.
-        unsafe {
-            let _ = DisconnectNamedPipe(self.handle.raw());
-        }
+        // Deliberately *not* calling `DisconnectNamedPipe`.
+        //
+        // `DisconnectNamedPipe` discards any buffered data the client has not
+        // read yet, which loses a final response (for example the
+        // `ShutdownEngine` acknowledgement). This stream is never reused:
+        // `accept` creates a fresh instance, so closing the handle is enough and
+        // lets the peer drain what it was already sent. The handle is closed
+        // exactly once by `OwnedHandle::drop`.
     }
 }
 
-/// Reads back the effective SDDL of a named pipe.
+/// Reads back the effective SDDL DACL of a named pipe.
 ///
-/// Used by the test suite to prove that the created pipe does not grant
-/// access to `Everyone`, `BUILTIN\Users` or `ANONYMOUS`.
+/// Used by the test suite to prove that the created pipe does not grant access
+/// to `Everyone`, `BUILTIN\Users` or `ANONYMOUS`. This is stronger than
+/// asserting that the request string looks right: it inspects what the kernel
+/// actually applied.
+///
+/// The pipe must be in the listening state; opening it consumes one instance,
+/// so this is intended for tests rather than production use.
 pub fn describe_pipe_security(path: &str) -> IpcResult<String> {
-    let wide_path = to_wide(path);
+    let handle = open_pipe(path)?;
+    let mut descriptor = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
 
-    // SAFETY:
-    // * `wide_path` is a valid NUL-terminated UTF-16 string.
-    // * The returned handle is closed by `OwnedHandle`.
-    let handle = unsafe {
-        CreateFileW(
-            windows::core::PCWSTR(wide_path.as_ptr()),
-            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
-            FILE_SHARE_MODE(0),
-            None,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            None,
-        )
-    };
-
-    let handle = handle.map_err(|err| {
-        IpcError::EndpointUnavailable(format!("could not open the named pipe {path}: {err}"))
-    })?;
-
-    let handle = OwnedHandle::new(handle).ok_or_else(|| {
-        IpcError::EndpointUnavailable(format!("the named pipe {path} returned an invalid handle"))
-    })?;
-
+    // Ask for the DACL only. Whether the DACL is *protected* is a property of
+    // the descriptor's own control flags, so it shows up as the `P` after `D:`
+    // without requesting `PROTECTED_DACL_SECURITY_INFORMATION` here.
+    //
     // SAFETY:
     // * `handle` is a live handle with the right to read its security
     //   descriptor.
-    // * The out-parameters are valid pointers; `ppsecuritydescriptor` receives
-    //   a descriptor allocated by the API and released with `LocalFree`.
-    let mut descriptor: PSECURITY_DESCRIPTOR = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
-
-    // SAFETY: see above; the descriptor out-parameter is only read after the
-    // call reports success.
+    // * `descriptor` is a valid out-pointer that receives a `LocalAlloc`-ed
+    //   descriptor, freed below.
     let status = unsafe {
-        windows::Win32::Security::Authorization::GetSecurityInfo(
+        GetSecurityInfo(
             handle.raw(),
             SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            DACL_SECURITY_INFORMATION,
             None,
             None,
             None,
@@ -642,54 +663,39 @@ pub fn describe_pipe_security(path: &str) -> IpcResult<String> {
         )
     };
 
-    if status != windows::Win32::Foundation::WIN32_ERROR(0) {
+    if status.0 != 0 {
         return Err(IpcError::Platform(format!(
-            "could not read the pipe security descriptor: {status:?}"
+            "could not read the pipe security descriptor: {}",
+            status.0
         )));
     }
 
-    let mut raw: *mut u16 = std::ptr::null_mut();
+    let mut raw = PWSTR::null();
 
     // SAFETY:
     // * `descriptor` is a live security descriptor.
-    // * `raw` receives a `LocalAlloc`-ed NUL-terminated wide string that is
-    //   read below and freed with `LocalFree`.
-    unsafe {
+    // * `raw` receives a `LocalAlloc`-ed NUL-terminated wide string, handed to
+    //   `take_wide_string` which frees it.
+    let text = unsafe {
         ConvertSecurityDescriptorToStringSecurityDescriptorW(
             descriptor,
             SDDL_REVISION_1,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            DACL_SECURITY_INFORMATION,
             &mut raw,
             None,
         )
         .map_err(|err| {
-            IpcError::Platform(format!("could not render the pipe security descriptor: {err}"))
+            IpcError::Platform(format!(
+                "could not render the pipe security descriptor: {err}"
+            ))
         })?;
-    }
-
-    let text = {
-        // SAFETY: `raw` is a NUL-terminated wide string allocated by the API.
-        let mut len = 0_usize;
-        unsafe {
-            while *raw.add(len) != 0 {
-                len += 1;
-            }
-        }
-        // SAFETY: `raw` points at `len` UTF-16 code units.
-        let slice = unsafe { std::slice::from_raw_parts(raw, len) };
-        String::from_utf16_lossy(slice)
+        take_wide_string(raw)
     };
 
-    // SAFETY: the descriptor and the string were both allocated with
-    // `LocalAlloc` inside the API calls above; `LocalFree` is the matching
-    // deallocator for each and each is freed exactly once.
+    // SAFETY: `descriptor` was allocated by `GetSecurityInfo` with `LocalAlloc`;
+    // `LocalFree` is the matching deallocator and it is called exactly once.
     unsafe {
-        let _ = windows::Win32::Foundation::LocalFree(Some(
-            windows::Win32::Foundation::HLOCAL(descriptor.0.cast::<c_void>()),
-        ));
-        let _ = windows::Win32::Foundation::LocalFree(Some(
-            windows::Win32::Foundation::HLOCAL(raw.cast::<c_void>()),
-        ));
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
     }
 
     Ok(text)
@@ -697,12 +703,26 @@ pub fn describe_pipe_security(path: &str) -> IpcResult<String> {
 
 /// The endpoint path the engine uses for the current user and process.
 ///
-/// The suffix is derived from the process id so that two engine instances do
-/// not collide.
+/// The suffix is the process id so two engine instances do not collide.
 #[must_use]
 pub fn default_endpoint_path() -> String {
-    let pid = windows::Win32::System::Threading::GetCurrentProcessId();
-    pipe_name(&format!("{pid}"))
+    // SAFETY: `GetCurrentProcessId` has no preconditions and cannot fail.
+    let pid = unsafe { GetCurrentProcessId() };
+    pipe_name(&pid.to_string())
+}
+
+/// The SID string of the current user, for diagnostics.
+pub fn current_user_sid_string() -> IpcResult<String> {
+    current_user_sid()
+}
+
+/// The `OBJECT_SECURITY_INFORMATION` flags used when querying the DACL.
+///
+/// Exposed so a caller can request an equivalent query without hard-coding the
+/// newtype.
+#[must_use]
+pub fn dacl_security_information() -> OBJECT_SECURITY_INFORMATION {
+    DACL_SECURITY_INFORMATION
 }
 
 #[cfg(test)]
@@ -720,11 +740,21 @@ mod tests {
     }
 
     #[test]
-    fn pipe_name_contains_the_user_sid_and_the_suffix() {
+    fn pipe_name_contains_the_suffix() {
         let name = pipe_name("12345");
         assert!(name.starts_with(PIPE_PREFIX));
         assert!(name.ends_with("-12345"));
-        assert!(!name.contains('\\'), "the pipe name must not contain a backslash");
+
+        // The name legitimately begins with `\\.\pipe\`, so the backslash check
+        // applies only to the sanitised portion after the fixed prefix: no
+        // further path separators or whitespace may be injected there.
+        let tail = &name[PIPE_PREFIX.len()..];
+        assert!(!tail.contains('\\'), "unexpected backslash in {tail}");
+        assert!(!tail.contains('/'), "unexpected slash in {tail}");
+        assert!(
+            !tail.chars().any(char::is_whitespace),
+            "unexpected whitespace in {tail}"
+        );
     }
 
     #[test]
@@ -747,7 +777,60 @@ mod tests {
     }
 
     #[test]
+    fn security_attributes_are_well_formed() {
+        let descriptor = OwnedSecurityDescriptor::from_sddl(PIPE_SDDL).expect("valid SDDL");
+        let attributes = descriptor.attributes();
+        assert_eq!(
+            attributes.nLength,
+            u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).expect("size fits")
+        );
+        assert!(!attributes.lpSecurityDescriptor.is_null());
+        assert_eq!(
+            attributes.bInheritHandle.0, 0,
+            "the handle must not be inherited"
+        );
+    }
+
+    #[test]
     fn an_invalid_sddl_is_rejected() {
         assert!(OwnedSecurityDescriptor::from_sddl("not an sddl").is_err());
+    }
+
+    #[test]
+    fn current_user_sid_looks_like_a_sid() {
+        let sid = current_user_sid_string().expect("the process token must expose a user SID");
+        assert!(sid.starts_with("S-1-"), "unexpected SID form: {sid}");
+    }
+
+    /// End-to-end ACL check: create a real pipe, read the DACL the kernel
+    /// applied, and prove no world/group/anonymous ACE is present.
+    #[test]
+    fn created_pipe_has_no_world_or_group_aces() {
+        let path = pipe_name(&format!("acl-test-{}", std::process::id()));
+
+        // Create the listening instance, then inspect it from a client handle.
+        let listener = WindowsListener::bind(&path).expect("bind should succeed");
+
+        // Opening the same name consumes the listening instance, which is fine
+        // inside a test: we only need a handle to query the DACL.
+        let sddl = describe_pipe_security(&path).expect("security descriptor should be readable");
+        drop(listener);
+
+        assert!(
+            sddl.contains("D:P") || sddl.contains("D:"),
+            "unexpected SDDL: {sddl}"
+        );
+        assert!(
+            !sddl.contains(";;;WD)"),
+            "the created pipe grants access to Everyone: {sddl}"
+        );
+        assert!(
+            !sddl.contains(";;;BU)"),
+            "the created pipe grants access to BUILTIN\\\\Users: {sddl}"
+        );
+        assert!(
+            !sddl.contains(";;;AN)"),
+            "the created pipe grants access to ANONYMOUS: {sddl}"
+        );
     }
 }

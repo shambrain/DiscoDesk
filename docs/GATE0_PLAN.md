@@ -1,7 +1,8 @@
 # Gate 0 implementation plan — repository and environment baseline
 
-**Status:** In progress. Scaffold and CI implemented; verification evidence recorded in
-`docs/IMPLEMENTATION_STATE.md`.
+**Status:** Scaffold, engine, IPC and CI implemented and verified on Windows. The Studio
+scaffold is **not** implemented, so one Gate 0 acceptance item is still open.
+**Evidence:** `docs/IMPLEMENTATION_STATE.md` §3.
 **Authority:** `OPENCODE_MASTER_DIRECTIVE.md` §9 defines Gate 0. `AGENTS.md` binds every
 decision here. `ARCHITECTURE.md` §4, §5, §11 and §16 define the contracts.
 
@@ -186,6 +187,17 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo build --workspace
+powershell -File scripts/ipc-smoke.ps1
+```
+
+The last step starts the real engine binary and drives the real named pipe. It exists
+because unit tests cannot prove that the process actually serves the protocol; it caught
+two engine defects that compiled cleanly.
+
+Through the Visual Studio environment instead (same commands, MSVC initialised):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Check
 ```
 
 Dependency policy, separately (not part of the code build):

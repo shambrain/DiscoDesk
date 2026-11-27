@@ -35,7 +35,8 @@ Captured 2026-11-27 on the primary development machine.
 | Cargo (pinned) | `cargo 1.100.0 (3acc79c0c 2026-11-05)` | `rustup run 1.100.0 cargo --version` |
 | LLVM in rustc | 23.1.1 (1.99.1 host); see `rustc --version --verbose` for 1.100.0 | `rustc --version --verbose` |
 | MSVC toolset A | Visual Studio Build Tools 2019, 16.11.37507.1, MSVC 14.29.30133 | `vswhere -products * -format json` |
-| MSVC toolset B | Visual Studio Build Tools 2026, 18.11.12315.225, MSVC 14.51.36231 | `vswhere -products * -format json` |
+| MSVC toolset B | Visual Studio Build Tools 2026, **18.12.12412.261**, MSVC **14.52.37025** (selected by the helper) | `vswhere -all -prerelease -products * -format json` + `VC\Tools\MSVC` |
+| Visual Studio IDE | Visual Studio Community 2026 (Insiders), `18.13.0-insiders+12412.241`, prerelease, `C:\Program Files\Microsoft Visual Studio\18\Insiders` | `vswhere -all -prerelease -products *` |
 | Windows SDK | 10.0.19041.0 and 10.0.26100.0 | `C:\Program Files (x86)\Windows Kits\10\Lib` |
 | `link.exe` | Present in the 2026 Build Tools, Hostx64\x64 | filesystem check |
 | MSBuild | Present in VS Build Tools 2026 | filesystem check |

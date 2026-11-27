@@ -6,19 +6,29 @@
 
 ## 1. Actual development-host inventory
 
-Evidence supplied by the developer on 2026-11-27:
+Verified on 2026-11-27 with `vswhere.exe -all -prerelease -products * -format json` and
+by reading `VC\Tools\MSVC` on disk. These are measurements, not expectations.
 
-| Installed product | Screenshot / command evidence | Use in DiscoDesk |
+| Installed product | Verified value | Use in DiscoDesk |
 |---|---|---|
-| Visual Studio Community 2026 Insiders | Listed under Installed; product update waiting to download at 0% | IDE and Open Folder experience after its pending update finishes |
-| Visual Studio Build Tools 2026 | Version 18.11.1 (October 2026 feature update); MSVC 14.51.36231 confirmed in PowerShell | Preferred stable 18.x MSVC x64/x86 toolchain |
-| Visual Studio Build Tools 2019 | Version 16.11.58; update 16.11.63 available | Retain as legacy installation; not selected by the DiscoDesk helper |
-| Windows SDK 10.0.19041.0 | Detected in PowerShell | Existing compatibility SDK |
-| Windows SDK 10.0.26100.0 | Detected in PowerShell | Preferred SDK for this Windows 10 development host |
+| Visual Studio Community 2026 (Insiders) | `18.13.0-insiders+12412.241`, prerelease, `C:\Program Files\Microsoft Visual Studio\18\Insiders` | IDE, Open Folder, native debugger |
+| Visual Studio Build Tools 2026 | `18.12.1+12412.261`, stable, `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools` | **Selected** compiler toolchain for reproducible builds |
+| MSVC toolset | **`14.52.37025`** (present in both 18.x installs) | x64/x86 native toolchain |
+| Visual Studio Build Tools 2019 | `16.11.58`, MSVC `14.29.30133` | Legacy only; not selected by the helper |
+| Windows SDK | `10.0.19041.0` and **`10.0.26100.0`** | `10.0.26100.0` is the required SDK for this workflow |
+| WebView2 Runtime | `158.0.4370.33` (Evergreen) | Tauri Studio prerequisite |
+| Rust | `1.100.0`, host `x86_64-pc-windows-msvc` | Pinned by `rust-toolchain.toml` |
 
-The Installer screenshot shows an available November 2026 update (18.12.1) for Build Tools 2026 and a pending update for Community 2026 Insiders. Neither update is recorded as installed. The helper selects an installed stable Visual Studio 18.x instance with the MSVC x64/x86 component; it does not install or update Visual Studio.
+> **Version drift is expected and must be re-measured, not assumed.** The Build Tools
+> instance was at `18.11.1` / MSVC `14.51` when this document was first drafted and is now
+> `18.12.1` / MSVC `14.52`. The helper discovers the toolset at run time, so it does not
+> hard-code a version. Re-run `-Action Doctor` after any Visual Studio update.
 
-The Insiders IDE is suitable for evaluating the IDE experience. Prefer the stable Build Tools 2026 instance for the compiler toolchain and reproducible builds. Keep Build Tools 2019 installed unless there is a separately justified reason to remove it.
+`Get-StableVs18Path` selects a **stable** 18.x installation with the MSVC x64/x86
+component and prefers `BuildTools`. That is why the Insiders IDE is used for the debugger
+experience while the stable Build Tools instance supplies the compiler. The helper does
+not install or update Visual Studio, and no script in this repository will.
+
 
 ## 2. Division of responsibility
 
@@ -52,9 +62,37 @@ From a repository-root PowerShell:
 The helper:
 1. Locates vswhere.exe.
 2. Selects a stable 18.x Visual Studio instance with MSVC x64/x86; prefers Build Tools when present.
-3. Runs VsDevCmd.bat -arch=x64 -host_arch=x64 and imports its environment into the helper process.
+3. Runs `VsDevCmd.bat -arch=x64 -host_arch=x64` and imports its environment into the helper process.
 4. Adds the rustup-managed %USERPROFILE%\.cargo\bin directory to PATH when present. It does not install Rust or change the pinned toolchain.
 5. Reports cl.exe, link.exe, MSBuild, CMake, SDK include versions, Rust/Cargo, WebView2, Community IDE and whether the engine entry point is present.
+
+### 4.1 Defect fixed: VsDevCmd environment import
+The first implementation passed `cmd /s /c "..."` to PowerShell as a single native
+argument. PowerShell re-quotes native arguments, so the nested quotes were corrupted and
+the Doctor failed with `'""C:\Program' is not recognized as an internal or external
+command`. A second defect read `ExitCode` after `Dispose()`, discarding it.
+
+`Import-VsEnvironment` now writes the `call` + `set` sequence to a temporary batch file
+and invokes it as a single space-free argument, which removes the quoting problem
+entirely, and captures the exit code before disposal. The batch prints only `set` output
+(VsDevCmd's banner is suppressed) and the parser accepts only `NAME=value` lines, so a
+banner line can never become an environment variable.
+
+Verified result on this host (`-Action Doctor`, exit code 0):
+
+```text
+Selected stable VS 18.x toolchain: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools
+FOUND  cl.exe:     ...\VC\Tools\MSVC\14.52.37025\bin\HostX64\x64\cl.exe
+FOUND  link.exe:   ...\VC\Tools\MSVC\14.52.37025\bin\HostX64\x64\link.exe
+FOUND  msbuild.exe:...\MSBuild\Current\Bin\amd64\MSBuild.exe
+FOUND  cmake.exe:  ...\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+FOUND Windows SDK 10.0.26100.0 headers and x64 libraries.
+Rust: rustc 1.100.0 (0ef1bc386 2026-11-09)   (target x86_64-pc-windows-msvc)
+Cargo: cargo 1.100.0 (3acc79c0c 2026-11-05)
+WebView2 Runtime: 158.0.4370.33
+Visual Studio IDE: C:\Program Files\Microsoft Visual Studio\18\Insiders\Common7\IDE\devenv.exe
+```
+
 
 The Rust project continues to use rust-toolchain.toml and x86_64-pc-windows-msvc. A shell that cannot find rustc by default is a PATH issue if the pinned Rust toolchain exists under .cargo\bin; it is not evidence that Rust must be reinstalled.
 
@@ -78,9 +116,36 @@ The checked-in .vs/launch.vs.json provides:
 - DiscoDesk Engine (Debug) -> target/debug/discodesk-engine.exe
 - DiscoDesk Engine (Optimized + Symbols) -> target/release-with-symbols/discodesk-engine.exe
 
-The current public main snapshot at commit 2912a7e5b356301121c2956b301fc56dd364b23d contains apps/discodesk-engine/Cargo.toml, whose binary manifest declares src/main.rs, but that source file is absent from the public tree. The build helper explicitly refuses to fabricate an entry point. F5 becomes usable after the real Gate 0 engine source is committed and the corresponding Cargo build succeeds.
+### 6.1 Current debug readiness (verified 2026-11-27)
 
-The existing release profile strips symbols. It remains unchanged for normal release artifacts. A separate release-with-symbols profile inherits release optimisation but retains full debug information; use it for optimized debugging and profiling. Keep generated PDB files out of Git.
+`apps/discodesk-engine/src/main.rs` now exists, so the reason the previous revision of
+this document gave for F5 being unavailable no longer applies. The helper's
+`Assert-EngineEntryPoint` guard remains: if that file is ever removed, the build tasks
+refuse rather than fabricate an entry point.
+
+Both profiles build and emit symbols:
+
+| Artifact | Size |
+|---|---|
+| `target/debug/discodesk-engine.exe` | 4,816,384 B |
+| `target/debug/discodesk_engine.pdb` | 39,563,264 B |
+| `target/release-with-symbols/discodesk-engine.exe` | 1,370,624 B |
+| `target/release-with-symbols/discodesk_engine.pdb` | 20,631,552 B |
+
+> **PDB naming:** Rust names the PDB after the **underscored** crate name
+> (`discodesk_engine.pdb`), not after the binary (`discodesk-engine.exe`). A check for
+> `discodesk-engine.pdb` reports a false negative. VS launch profiles point at the
+> `.exe`; the debugger locates the sibling PDB by its own naming rules.
+
+**Not yet verified:** an interactive debug session (breakpoint hit, native call stack
+walk, module/symbol load). The binaries, profiles and PDBs are in place, but stepping
+through code in the IDE requires a human at the machine and has not been recorded as
+evidence. Do not claim "F5 debugging works" until that is done.
+
+The existing release profile strips symbols and remains correct for distribution
+artifacts. A separate `release-with-symbols` profile inherits release optimisation but
+retains full debug information; use it for optimized debugging and profiling. Keep
+generated PDB files out of Git.
 
 ## 7. Profiling and diagnostics
 

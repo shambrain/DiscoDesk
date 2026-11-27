@@ -257,7 +257,7 @@ impl SetVibePresetPayload {
 ///
 /// Effects are addressed by name. Each effect carries a bounded intensity in
 /// `0.0..=1.0` and an enable flag.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SetEffectSettingsPayload {
     /// The effect name.
     pub effect: String,
@@ -716,7 +716,10 @@ mod tests {
         envelope.version = 2;
         assert!(matches!(
             envelope.validate(),
-            Err(IpcError::ProtocolVersionMismatch { found: 2, expected: 1 })
+            Err(IpcError::ProtocolVersionMismatch {
+                found: 2,
+                expected: 1
+            })
         ));
     }
 
@@ -898,10 +901,7 @@ mod tests {
         assert!(ok.is_ok());
         assert_eq!(ok.request_id, 7);
 
-        let err = ResponseEnvelope::from_error(
-            8,
-            &IpcError::UnknownCommand("X".to_owned()),
-        );
+        let err = ResponseEnvelope::from_error(8, &IpcError::UnknownCommand("X".to_owned()));
         assert!(!err.is_ok());
         let payload = err.error.expect("error payload should be present");
         assert_eq!(payload.code, ErrorCode::UnknownCommand.as_u16());

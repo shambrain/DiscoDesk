@@ -1,6 +1,7 @@
 [package]
 name = "dd-ipc"
 description = "DiscoDesk local IPC: versioned length-delimited framing and the engine/Studio command contract."
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +14,6 @@ workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

@@ -226,10 +226,7 @@ mod tests {
                 ErrorCode::ProtocolVersionMismatch,
             ),
             (
-                EngineError::FrameTooLarge {
-                    size: 10,
-                    limit: 5,
-                },
+                EngineError::FrameTooLarge { size: 10, limit: 5 },
                 ErrorCode::FrameTooLarge,
             ),
             (
@@ -240,18 +237,12 @@ mod tests {
                 EngineError::PermissionDenied("x".to_owned()),
                 ErrorCode::PermissionDenied,
             ),
-            (
-                EngineError::NotFound("x".to_owned()),
-                ErrorCode::NotFound,
-            ),
+            (EngineError::NotFound("x".to_owned()), ErrorCode::NotFound),
             (
                 EngineError::AlreadyRunning("x".to_owned()),
                 ErrorCode::AlreadyRunning,
             ),
-            (
-                EngineError::Internal("x".to_owned()),
-                ErrorCode::Internal,
-            ),
+            (EngineError::Internal("x".to_owned()), ErrorCode::Internal),
             (
                 EngineError::NotImplemented("x".to_owned()),
                 ErrorCode::NotImplemented,

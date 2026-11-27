@@ -14,7 +14,7 @@ use std::os::unix::net::{UnixListener as StdUnixListener, UnixStream as StdUnixS
 use std::path::{Path, PathBuf};
 
 use crate::error::{IpcError, IpcResult};
-use crate::frame::{self, Frame, FRAME_HEADER_BYTES};
+use crate::frame::{self, FRAME_HEADER_BYTES, Frame};
 use crate::transport::{Listener, Transport};
 
 /// The file mode the socket is created with: owner read/write only.
@@ -69,12 +69,14 @@ impl Listener for UnixListener {
             IpcError::Platform(format!("could not accept a Unix socket client: {err}"))
         })?;
 
-        fs::set_permissions(&self.path, fs::Permissions::from_mode(SOCKET_MODE)).map_err(|err| {
-            IpcError::EndpointUnavailable(format!(
-                "could not restrict the permissions of {}: {err}",
-                self.path.display()
-            ))
-        })?;
+        fs::set_permissions(&self.path, fs::Permissions::from_mode(SOCKET_MODE)).map_err(
+            |err| {
+                IpcError::EndpointUnavailable(format!(
+                    "could not restrict the permissions of {}: {err}",
+                    self.path.display()
+                ))
+            },
+        )?;
 
         Ok(Box::new(UnixStream {
             stream,

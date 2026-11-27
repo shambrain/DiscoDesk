@@ -1,19 +1,13 @@
 # Clippy configuration for the DiscoDesk workspace.
 #
-# The lint set is intentionally small and explicit. Pedantic lints are enabled
-# per crate through `[lints.clippy]` in each `Cargo.toml` (which inherits the
-# workspace table) rather than globally, so that a crate is not forced to
-# satisfy lints that do not apply to it.
+# Only keys that are valid for this Clippy version may appear here. An unknown
+# key is a hard error ("unknown field name"), not a warning, so this file is
+# kept deliberately small. Lint *selection* lives in `[workspace.lints]` in the
+# root `Cargo.toml`; this file only carries values.
 
-# `msrv` must stay in sync with `rust-version` in the workspace `Cargo.toml`.
+# Must stay in sync with `rust-version` in the workspace `Cargo.toml`.
 msrv = "1.100.0"
 
-# Maximum allowed size for a single source file, in bytes.
-max-file-size = 16384
-
 # The engine is a background process; large enum variants are a real
-# allocation concern, so this is enabled workspace-wide.
+# allocation concern, so this is tuned down from the default.
 enum-variant-size-threshold = 64
-
-# `cargo clippy --fix` must never rewrite code behind our back in CI.
-fix = false

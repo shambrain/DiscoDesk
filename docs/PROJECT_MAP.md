@@ -4,17 +4,33 @@ Use this map to navigate without loading the entire architecture and research co
 
 ## Start here
 - docs/VISUAL_STUDIO_WORKFLOW.md — Visual Studio Open Folder, MSVC/SDK setup, debugging and local commit helper.
+- docs/GATE0_PLAN.md — what Gate 0 builds, what it refuses to build, and how each acceptance item is proven.
+- docs/IPC_PROTOCOL.md — the engine/Studio wire contract: framing, envelopes, commands, error codes, security.
+- docs/ADR/ — accepted architecture decisions with rationale and verification.
+- docs/PLATFORM_SUPPORT.md — measured host baseline and per-platform capability status.
 - AGENTS.md — global invariants.
 - docs/IMPLEMENTATION_STATE.md — actual implementation and current acceptance gate.
 - OPENCODE_MASTER_DIRECTIVE.md — execution policy and acceptance gates.
 - ARCHITECTURE.md — system design.
 - RESEARCH.md — evidence and source register.
 
+## Crate map (Gate 0)
+
+| Path | Responsibility | Status |
+|---|---|---|
+| `crates/dd-ipc` | Framing, envelopes, command/error contract, named-pipe + UDS transports | Implemented, tested |
+| `crates/dd-core` | Authoritative state machine, lifecycle, typed engine error | Implemented, tested |
+| `crates/dd-diagnostics` | Privacy-preserving structured events, path redaction, rotating log | Implemented, tested |
+| `apps/discodesk-engine` | Background engine binary: IPC server, CLI | Implemented, tested |
+| `apps/discodesk-studio` | Tauri v2 shell, separate process | **Not created yet** |
+| `dd-audio`, `dd-dsp`, `dd-analysis`, `dd-renderer`, `dd-package`, `dd-steam` | Deferred to their gates | **Must not exist** (enforced by `scripts/check.ps1`) |
+
 ## Task-to-section map
 
 | Concern | Architecture reference | Specialist |
 |---|---|---|
 | Product/stack/runtime/processes | Sections 1–5 | systems-architect |
+| Local IPC contract | Section 4 and docs/IPC_PROTOCOL.md | systems-architect, rust-engineer |
 | Audio capture | Section 6 | audio-dsp-engineer, platform-engineer |
 | DSP/features | Section 7 | audio-dsp-engineer |
 | Image analysis/cache | Section 8 | image-intelligence-engineer |
@@ -27,6 +43,8 @@ Use this map to navigate without loading the entire architecture and research co
 | Roadmap | Section 17 | discodesk-lead |
 | Wand/watcher/presets/notifications | Addendum A and docs/DESKTOP_EXPERIENCE_SPEC.md | desktop-experience-engineer |
 | Harness/model routing | docs/AI_TOOLING_DECISION.md | discodesk-lead, research-licensing-auditor |
+| Windows build/debug tooling | docs/VISUAL_STUDIO_WORKFLOW.md | platform-engineer, rust-engineer |
+| Dependency versions and licences | RESEARCH.md §16 | research-licensing-auditor |
 
 ## Work rules
 1. Inspect current files and state before editing.
@@ -35,3 +53,4 @@ Use this map to navigate without loading the entire architecture and research co
 4. Search symbols/tests before opening large source files.
 5. Update this map when crate/spec ownership changes.
 6. A planned module is not evidence that code exists.
+7. Verify a crate's real status in `docs/IMPLEMENTATION_STATE.md`, not in this table's intent.

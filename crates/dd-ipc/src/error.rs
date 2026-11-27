@@ -40,6 +40,9 @@ pub enum ErrorCode {
     EndpointUnavailable = 1013,
     /// The operation was cancelled by the caller.
     Cancelled = 1014,
+    /// The command exists in the protocol but the subsystem behind it is not
+    /// implemented yet. The message names the gate that will implement it.
+    NotImplemented = 1015,
 }
 
 impl ErrorCode {
@@ -68,6 +71,7 @@ impl ErrorCode {
             1012 => Some(Self::Internal),
             1013 => Some(Self::EndpointUnavailable),
             1014 => Some(Self::Cancelled),
+            1015 => Some(Self::NotImplemented),
             _ => None,
         }
     }
@@ -91,6 +95,7 @@ impl fmt::Display for ErrorCode {
             Self::Internal => "internal error",
             Self::EndpointUnavailable => "endpoint unavailable",
             Self::Cancelled => "cancelled",
+            Self::NotImplemented => "not implemented",
         };
         f.write_str(text)
     }

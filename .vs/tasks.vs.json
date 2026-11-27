@@ -34,7 +34,7 @@
     {
       "taskName": "DiscoDesk: Build Debug",
       "appliesTo": "*",
-      "type": "launch",
+      "type": "default",
       "contextType": "build",
       "command": "powershell.exe",
       "args": [
@@ -50,7 +50,7 @@
     {
       "taskName": "DiscoDesk: Rebuild Debug",
       "appliesTo": "*",
-      "type": "launch",
+      "type": "default",
       "contextType": "rebuild",
       "command": "powershell.exe",
       "args": [

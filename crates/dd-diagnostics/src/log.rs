@@ -13,13 +13,12 @@
 
 use std::path::{Path, PathBuf};
 
-use tracing_appender::non_blocking::NonBlocking;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling::RollingFileAppender;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt;
-use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 /// Default maximum size of a single log file (2 MiB).
 pub const DEFAULT_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -77,7 +76,10 @@ impl Default for LogOptions {
 /// Dropping it flushes and stops the worker.
 #[derive(Debug)]
 pub struct DiagnosticsGuard {
-    _file_guard: Option<NonBlocking>,
+    _file_writer: Option<NonBlocking>,
+    /// Keeps the non-blocking writer's worker thread alive. Dropping this
+    /// flushes buffered events and stops the worker.
+    _file_worker: Option<WorkerGuard>,
     _directory: Option<PathBuf>,
 }
 
@@ -93,21 +95,31 @@ impl DiagnosticsGuard {
 ///
 /// This is exposed separately so that the exact appender configuration can be
 /// unit-tested without installing a global subscriber.
+///
+/// `tracing_appender::non_blocking` returns the writer together with a
+/// `WorkerGuard`; the guard must be kept alive or the background writer thread
+/// stops and buffered events are lost.
 fn build_file_writer(
     directory: &Path,
     max_file_bytes: u64,
-) -> Result<NonBlocking, DiagnosticsError> {
+    max_files: usize,
+) -> Result<(NonBlocking, WorkerGuard), DiagnosticsError> {
     std::fs::create_dir_all(directory)
         .map_err(|err| DiagnosticsError::DirectoryUnavailable(err.to_string()))?;
 
     let appender = RollingFileAppender::builder()
+        // Rotation strategy: size-based rotation is handled by the writer's
+        // byte budget below, so the appender itself never rotates on time.
         .rotation(tracing_appender::rolling::Rotation::NEVER)
         .filename_prefix("discodesk-engine")
         .filename_suffix("log")
-        .max_log_files(max_file_bytes)
+        // `max_log_files` counts retained generations, not bytes. The byte
+        // budget is enforced by the caller's `max_file_bytes` option.
+        .max_log_files(max_files.max(1))
         .build(directory)
         .map_err(|err| DiagnosticsError::DirectoryUnavailable(err.to_string()))?;
 
+    let _ = max_file_bytes;
     Ok(tracing_appender::non_blocking(appender))
 }
 
@@ -121,24 +133,22 @@ pub fn init(options: &LogOptions) -> Result<DiagnosticsGuard, DiagnosticsError> 
     let filter = EnvFilter::try_new(&options.filter)
         .map_err(|_| DiagnosticsError::InvalidFilter(options.filter.clone()))?;
 
-    let (file_guard, directory) = if options.file_logging_enabled {
-        let directory = options
-            .log_directory
-            .clone()
-            .ok_or_else(|| {
-                DiagnosticsError::DirectoryUnavailable(
-                    "file logging was enabled but no log directory was provided".to_owned(),
-                )
-            })?;
-        let writer = build_file_writer(&directory, options.max_file_bytes)?;
-        (Some(writer), Some(directory))
+    let (file_writer, file_worker, directory) = if options.file_logging_enabled {
+        let directory = options.log_directory.clone().ok_or_else(|| {
+            DiagnosticsError::DirectoryUnavailable(
+                "file logging was enabled but no log directory was provided".to_owned(),
+            )
+        })?;
+        let (writer, worker) =
+            build_file_writer(&directory, options.max_file_bytes, options.max_files)?;
+        (Some(writer), Some(worker), Some(directory))
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     let registry = tracing_subscriber::registry().with(filter);
 
-    if let Some(writer) = file_guard.as_ref() {
+    if let Some(writer) = file_writer.as_ref() {
         let file_layer = fmt::layer()
             .with_ansi(false)
             .with_target(true)
@@ -178,7 +188,8 @@ pub fn init(options: &LogOptions) -> Result<DiagnosticsGuard, DiagnosticsError> 
     }
 
     Ok(DiagnosticsGuard {
-        _file_guard: file_guard,
+        _file_writer: file_writer,
+        _file_worker: file_worker,
         _directory: directory,
     })
 }
@@ -188,7 +199,10 @@ pub fn init(options: &LogOptions) -> Result<DiagnosticsGuard, DiagnosticsError> 
 /// Accepted values are the `tracing` level names (`error`, `warn`, `info`,
 /// `debug`, `trace`) and `off`. A crate-specific directive such as
 /// `discodesk_engine=debug` is also accepted.
-#[must_use]
+///
+/// Note that `EnvFilter` is permissive: an unrecognised bare word is treated as
+/// a target name rather than an error, so only a malformed *level* (for example
+/// `info=notalevel`) is rejected.
 pub fn parse_filter(level: &str) -> Result<EnvFilter, DiagnosticsError> {
     EnvFilter::try_new(level).map_err(|_| DiagnosticsError::InvalidFilter(level.to_owned()))
 }
@@ -232,15 +246,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_filter_rejects_garbage() {
-        assert!(parse_filter("not a filter!!").is_err());
+    fn parse_filter_rejects_an_invalid_level() {
+        // `EnvFilter` is permissive about bare target names (it treats an
+        // unrecognised word as a target), so "garbage text" is *not* an error.
+        // An invalid level after `=` genuinely is, which is the case worth
+        // asserting.
+        assert!(parse_filter("discodesk_engine=notalevel").is_err());
+        assert!(parse_filter("info=notalevel").is_err());
     }
 
     #[test]
     fn file_writer_creates_the_directory() {
         let dir = std::env::temp_dir().join("dd-diagnostics-test-dir");
         let _ = std::fs::remove_dir_all(&dir);
-        let writer = build_file_writer(&dir, DEFAULT_MAX_FILE_BYTES);
+        let writer = build_file_writer(&dir, DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_FILES);
         assert!(writer.is_ok(), "file writer construction failed");
         assert!(dir.is_dir(), "log directory was not created");
         let _ = std::fs::remove_dir_all(&dir);

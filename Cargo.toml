@@ -30,6 +30,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
     "fmt",
     "registry",
     "ansi",
+    "env-filter",
 ] }
 tracing-appender = { version = "0.2.5", default-features = false }
 clap = { version = "4.6.10", default-features = false, features = [
@@ -51,9 +52,14 @@ windows = { version = "0.62.2", default-features = false, features = [
 ] }
 
 # Intra-workspace crates.
-dd-core = { path = "crates/dd-core" }
-dd-diagnostics = { path = "crates/dd-diagnostics" }
-dd-ipc = { path = "crates/dd-ipc" }
+#
+# `version` is declared alongside `path` deliberately: a path dependency with no
+# version is an implicit `*` requirement, which cargo-deny correctly rejects as
+# a wildcard. Keeping the version explicit also documents the intended version
+# of the dependency rather than leaving it implicit.
+dd-core = { path = "crates/dd-core", version = "0.1.0" }
+dd-diagnostics = { path = "crates/dd-diagnostics", version = "0.1.0" }
+dd-ipc = { path = "crates/dd-ipc", version = "0.1.0" }
 
 [workspace.lints.rust]
 # `unsafe_op_in_unsafe_fn` keeps every unsafe block explicit inside unsafe fns.

@@ -153,7 +153,10 @@ impl EngineState {
     /// transition.
     #[must_use]
     pub const fn is_reachable_at_gate_0(self) -> bool {
-        matches!(self, Self::Stopped | Self::Starting | Self::IdleReady | Self::ErrorRecoverable)
+        matches!(
+            self,
+            Self::Stopped | Self::Starting | Self::IdleReady | Self::ErrorRecoverable
+        )
     }
 
     /// Whether a transition from `self` to `next` is permitted.
@@ -225,7 +228,6 @@ mod tests {
     fn illegal_transitions_are_refused() {
         assert!(!EngineState::Stopped.can_transition_to(EngineState::IdleReady));
         assert!(!EngineState::Stopped.can_transition_to(EngineState::Rendering));
-        assert!(!EngineState::Stopped.can_transition_to(EngineState::Starting) == false);
         assert!(!EngineState::IdleReady.can_transition_to(EngineState::Starting));
         assert!(!EngineState::IdleReady.can_transition_to(EngineState::Rendering));
         assert!(!EngineState::Starting.can_transition_to(EngineState::Rendering));

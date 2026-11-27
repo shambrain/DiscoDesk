@@ -41,14 +41,51 @@ function Import-VsEnvironment {
     $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
     if (-not (Test-Path -LiteralPath $devCmd)) { throw "VsDevCmd.bat is missing from selected Visual Studio installation: $vsPath" }
 
-    $commandLine = '""{0}" -no_logo -arch=x64 -host_arch=x64 && set"' -f $devCmd
-    $environmentLines = @(& $env:ComSpec /d /s /c $commandLine)
-    if ($LASTEXITCODE -ne 0) { throw "VsDevCmd.bat failed with exit code $LASTEXITCODE." }
+    # Two problems make a direct one-liner unreliable here:
+    #  1. PowerShell re-quotes native arguments, which corrupts a nested-quoted
+    #     'cmd /s /c "..."' string ('""C:\Program' is not recognized').
+    #  2. Reading ExitCode after Dispose() throws away the value.
+    # A temporary batch file removes the quoting problem entirely: cmd is invoked
+    # with one plain argument, and 'call "..."' handles the spaces in the Visual
+    # Studio path. VsDevCmd's own banner is suppressed so only 'set' is captured.
+    $batchPath = [System.IO.Path]::Combine(
+        [System.IO.Path]::GetTempPath(),
+        ("discodesk-vsdev-{0}.bat" -f [System.Guid]::NewGuid().ToString('N'))
+    )
 
-    foreach ($line in $environmentLines) {
-        if ($line -match '^([^=]+)=(.*)$') {
+    $batch = @(
+        '@echo off',
+        ('call "{0}" -no_logo -arch=x64 -host_arch=x64 1>nul' -f $devCmd),
+        'if errorlevel 1 exit /b 1',
+        'set'
+    ) -join "`r`n"
+
+    $exitCode = 1
+    $lines = @()
+    try {
+        Set-Content -LiteralPath $batchPath -Value $batch -Encoding Ascii
+        # cmd /d /c with a single, space-free argument needs no quoting at all.
+        $lines = @(& $env:ComSpec /d /c $batchPath 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        Remove-Item -LiteralPath $batchPath -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($exitCode -ne 0) {
+        $detail = ($lines | Select-Object -First 8) -join [Environment]::NewLine
+        throw ("VsDevCmd.bat failed with exit code {0}. Confirm the installation is not mid-update.{1}{2}" -f $exitCode, [Environment]::NewLine, $detail)
+    }
+
+    $applied = 0
+    foreach ($line in $lines) {
+        # Only accept real environment entries; skip banner or error text.
+        if ($line -match '^([A-Za-z_][A-Za-z0-9_()]*)=(.*)$') {
             [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+            $applied++
         }
+    }
+    if ($applied -eq 0) {
+        throw 'VsDevCmd.bat ran but produced no environment entries; the Visual Studio installation may be incomplete.'
     }
     if (Test-Path -LiteralPath $script:CargoBin) { $env:PATH = $script:CargoBin + ';' + $env:PATH }
     $script:VsPath = $vsPath

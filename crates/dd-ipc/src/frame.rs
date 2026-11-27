@@ -9,7 +9,7 @@
 //! +--------+--------+-------------------+---------------------+
 //! ```
 //!
-//! * `magic` — the four ASCII bytes `D`, `D`, `F`, `1` (`b"DD F1"`).
+//! * `magic` — the four ASCII bytes `D`, `D`, `F`, `1` (`b"DDF1"`).
 //! * `version` — the protocol version, `u16` little-endian.
 //! * `length` — the payload length in bytes, `u32` little-endian.
 //! * `payload` — exactly `length` bytes.
@@ -30,8 +30,8 @@
 
 use crate::error::{IpcError, IpcResult};
 
-/// The four magic bytes that begin every frame: `b"DD F1"`.
-pub const FRAME_MAGIC: [u8; 4] = [b'D', b'D', b'F', b'1'];
+/// The four magic bytes that begin every frame: `b"DDF1"`.
+pub const FRAME_MAGIC: [u8; 4] = *b"DDF1";
 
 /// Size of the fixed frame header in bytes.
 pub const FRAME_HEADER_BYTES: usize = 10;
@@ -115,7 +115,7 @@ pub fn decode(bytes: &[u8], expected_version: u16) -> IpcResult<(Frame, usize)> 
         return Err(IpcError::FrameTooLarge {
             declared: length,
             limit: MAX_FRAME_BYTES,
-        };
+        });
     }
 
     let end = FRAME_HEADER_BYTES + length;
@@ -135,13 +135,7 @@ pub fn decode(bytes: &[u8], expected_version: u16) -> IpcResult<(Frame, usize)> 
         });
     }
 
-    Ok((
-        Frame {
-            version,
-            payload,
-        },
-        consumed,
-    ))
+    Ok((Frame { version, payload }, consumed))
 }
 
 /// Returns the declared payload length of the frame that starts at `bytes[0]`.
@@ -336,6 +330,6 @@ mod tests {
     #[test]
     fn encoded_frames_start_with_the_magic_bytes() {
         let encoded = encode(1, b"x").expect("encode should succeed");
-        assert_eq!(&encoded[0..4], b"DD F1");
+        assert_eq!(&encoded[0..4], &FRAME_MAGIC);
     }
 }

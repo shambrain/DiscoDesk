@@ -51,3 +51,26 @@ DiscoDesk is a Rust Cargo workspace with a planned Tauri Studio. Cargo must rema
 - Rust Windows MSVC target: https://doc.rust-lang.org/rustc/platform-support/windows-msvc.html
 - Rust debug information: https://doc.rust-lang.org/rustc/codegen-options/index.html#debuginfo
 - Tauri prerequisites: https://tauri.app/start/prerequisites/
+
+## Amendment 1 — 2026-11-27: installed versions changed
+
+The decision above is unchanged. The *measured* versions in "Context" were superseded by
+a Visual Studio update that completed during the same session, and are corrected here so
+this ADR is not read as current fact.
+
+| Item | As recorded in Context | Verified now | How verified |
+|---|---|---|---|
+| Build Tools 2026 | 18.11.1 | **18.12.1** (`18.12.12412.261`) | `vswhere -all -prerelease -products * -format json` |
+| MSVC toolset | 14.51.36231 | **14.52.37025** | `VC\Tools\MSVC` on disk; `cl.exe` resolved by the Doctor |
+| Community 2026 Insiders | update pending | **installed**: `18.13.0-insiders+12412.241` at `C:\Program Files\Microsoft Visual Studio\18\Insiders` | `vswhere -all -prerelease` |
+| Build Tools 2019 | 16.11.58, MSVC 14.29.30133 | unchanged | `vswhere` |
+
+Consequence for the decision: none. `Get-StableVs18Path` discovers the toolset at run
+time and does not hard-code a version, which is why the version drift did not break the
+workflow. `docs/VISUAL_STUDIO_WORKFLOW.md` §1 carries the corrected table and instructs
+re-running `-Action Doctor` after any Visual Studio update.
+
+Also recorded as resolved during this session: `Import-VsEnvironment` had two defects
+(PowerShell native-argument re-quoting corrupted the nested `cmd /s /c` command, and
+`ExitCode` was read after `Dispose()`). Both are fixed; the Doctor now exits `0` on this
+host. See `docs/VISUAL_STUDIO_WORKFLOW.md` §4.1.

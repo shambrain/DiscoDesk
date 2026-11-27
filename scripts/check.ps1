@@ -10,7 +10,8 @@
 [CmdletBinding()]
 param(
     [switch]$Release,
-    [switch]$SkipDeferredGuard
+    [switch]$SkipDeferredGuard,
+    [switch]$SkipSmoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -110,6 +111,39 @@ if ($Release) {
     Write-Section 'cargo build --workspace'
     & $cargo build --workspace
     if ($LASTEXITCODE -ne 0) { $failed += 'build' }
+}
+
+# ---------------------------------------------------------------------------
+# End-to-end agreement between the binary and the contract. Unit tests cannot
+# prove that the engine process actually serves the protocol over a real pipe.
+# ---------------------------------------------------------------------------
+if (-not $SkipSmoke) {
+    Write-Section 'IPC smoke test (real engine process, real named pipe)'
+    $smoke = Join-Path $PSScriptRoot 'ipc-smoke.ps1'
+    if (-not (Test-Path $smoke)) {
+        Write-Host 'FAIL: scripts/ipc-smoke.ps1 is missing' -ForegroundColor Red
+        $failed += 'ipc smoke (missing script)'
+    } else {
+        $configuration = if ($Release) { 'release' } else { 'debug' }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smoke -Configuration $configuration
+        if ($LASTEXITCODE -ne 0) { $failed += 'ipc smoke' }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Dependency licence and advisory policy. This is a required gate in CI; locally
+# it runs when the tool is installed and reports an explicit SKIP otherwise.
+# A skip is deliberately loud: it is not the same result as a pass.
+# ---------------------------------------------------------------------------
+Write-Section 'cargo deny check all (licences, advisories, bans, sources)'
+$deny = Get-Command cargo-deny.exe -ErrorAction SilentlyContinue
+if ($deny) {
+    & $deny.Source check all
+    if ($LASTEXITCODE -ne 0) { $failed += 'cargo deny' }
+} else {
+    Write-Host 'SKIPPED: cargo-deny is not installed; the licence/advisory gate did NOT run locally.' -ForegroundColor Yellow
+    Write-Host '  Install it with: cargo install cargo-deny --locked --version 0.22.1' -ForegroundColor Yellow
+    Write-Host '  CI enforces this check regardless of local installation.' -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------

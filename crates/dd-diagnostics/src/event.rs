@@ -282,16 +282,14 @@ impl EventSink for TracingEventSink {
             DiagnosticEvent::IpcFrameRejected { reason } => {
                 tracing::warn!(reason = *reason, "ipc frame rejected");
             }
-            DiagnosticEvent::RecoverableError { reason, context } => {
-                match context {
-                    Some(path) => {
-                        tracing::warn!(reason = *reason, path = %path, "recoverable error");
-                    }
-                    None => {
-                        tracing::warn!(reason = *reason, "recoverable error");
-                    }
+            DiagnosticEvent::RecoverableError { reason, context } => match context {
+                Some(path) => {
+                    tracing::warn!(reason = *reason, path = %path, "recoverable error");
                 }
-            }
+                None => {
+                    tracing::warn!(reason = *reason, "recoverable error");
+                }
+            },
             DiagnosticEvent::FileObserved { action, path } => {
                 tracing::debug!(action = ?action, path = %path, "file observed");
             }

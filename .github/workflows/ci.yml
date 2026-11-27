@@ -127,6 +127,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # End-to-end: start the built engine, talk to it over a real named pipe,
+      # and verify framing, envelopes, deferred-command refusal and clean
+      # shutdown. Unit tests cannot prove the process actually serves the
+      # protocol.
+      - name: IPC smoke test
+        shell: pwsh
+        run: ./scripts/ipc-smoke.ps1 -Configuration release
+
   # ------------------------------------------------------- dependency policy
   # Licence and advisory gate. A separate job so a policy failure is
   # distinguishable from a code failure. deny.toml is the single source of

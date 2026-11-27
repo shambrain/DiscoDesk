@@ -11,10 +11,14 @@
 //! No transport binds a TCP listener. There is no HTTP surface and no
 //! unauthenticated loopback endpoint.
 
-use std::io;
-
 use crate::error::IpcResult;
 use crate::frame::Frame;
+
+#[cfg(windows)]
+pub mod windows;
+
+#[cfg(unix)]
+pub mod unix;
 
 /// A bidirectional local IPC connection.
 ///
@@ -59,12 +63,12 @@ pub trait Listener: Send {
 pub fn listener(endpoint_path: &str) -> IpcResult<Box<dyn Listener>> {
     #[cfg(windows)]
     {
-        crate::transport::windows::WindowsListener::bind(endpoint_path)
+        windows::WindowsListener::bind(endpoint_path)
             .map(|listener| Box::new(listener) as Box<dyn Listener>)
     }
     #[cfg(unix)]
     {
-        crate::transport::unix::UnixListener::bind(endpoint_path)
+        unix::UnixListener::bind(endpoint_path)
             .map(|listener| Box::new(listener) as Box<dyn Listener>)
     }
     #[cfg(not(any(windows, unix)))]
@@ -80,12 +84,12 @@ pub fn listener(endpoint_path: &str) -> IpcResult<Box<dyn Listener>> {
 pub fn connect(endpoint_path: &str) -> IpcResult<Box<dyn Transport>> {
     #[cfg(windows)]
     {
-        crate::transport::windows::WindowsStream::connect(endpoint_path)
+        windows::WindowsStream::connect(endpoint_path)
             .map(|stream| Box::new(stream) as Box<dyn Transport>)
     }
     #[cfg(unix)]
     {
-        crate::transport::unix::UnixStream::connect(endpoint_path)
+        unix::UnixStream::connect(endpoint_path)
             .map(|stream| Box::new(stream) as Box<dyn Transport>)
     }
     #[cfg(not(any(windows, unix)))]
@@ -95,14 +99,4 @@ pub fn connect(endpoint_path: &str) -> IpcResult<Box<dyn Transport>> {
             "no IPC transport is available for this platform".to_owned(),
         ))
     }
-}
-
-/// Writes a whole buffer to a stream.
-///
-/// A short write is retried so that a partial write cannot silently truncate
-/// a frame.
-pub(crate) fn write_all(stream: &mut impl io::Write, bytes: &[u8]) -> IpcResult<()> {
-    stream.write_all(bytes)?;
-    stream.flush()?;
-    Ok(())
 }

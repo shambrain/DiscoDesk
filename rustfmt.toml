@@ -1,4 +1,12 @@
 edition = "2024"
 max_width = 100
 use_field_init_shorthand = true
-newline_style = "Windows"
+
+# `Unix` (LF) is required, not merely preferred.
+#
+# `.gitattributes` sets `*.rs text eol=lf`, so every checkout — Windows, macOS and
+# Linux — gets LF source files. With `newline_style = "Windows"` the formatter
+# would demand CRLF and `cargo fmt --check` would fail on any fresh clone and on
+# CI, while appearing to pass on a machine whose working tree still held CRLF.
+# LF everywhere keeps formatting identical across hosts.
+newline_style = "Unix"
