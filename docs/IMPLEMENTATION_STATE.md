@@ -87,14 +87,14 @@ Exit code 0. Steps, in order:
 | Studio frontend (typecheck, tests, production build) | **28 tests passed**, typecheck clean, Vite build 225 kB JS / 2.8 kB CSS |
 | `cargo fmt --all -- --check` | pass |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | pass, **0 warnings** |
-| `cargo test --workspace --all-features` | **123 passed, 0 failed, 0 ignored** (+1 doctest) |
+| `cargo test --workspace --all-features` | **125 passed, 0 failed, 0 ignored** (+1 doctest) |
 | `cargo build --workspace` | pass |
 | IPC smoke test | **passed**, 20/20 assertions |
 | Studio launch smoke test | **passed**, 11/11 assertions |
 | `cargo deny check all` | **exit 0** |
 
-Rust test counts by crate: `dd-core` 26, `dd-diagnostics` 18, `dd-ipc` 56,
-`discodesk-engine` 5, `discodesk-studio` 18 → **123**, plus 1 doctest.
+Rust test counts by crate: `dd-core` 26, `dd-diagnostics` 18, `dd-ipc` 58,
+`discodesk-engine` 5, `discodesk-studio` 18 → **125**, plus 1 doctest.
 
 ### 3.2 Builds
 
@@ -195,7 +195,7 @@ pending. It is **not** claimed green until it completes.
 
 A fresh clone of commit `5c90e10` — no `target/`, no `node_modules/`, no `dist/` — ran the
 canonical script end to end and exited **0**: guards, frontend install/typecheck/tests/build,
-fmt, clippy, 123 tests, build, both smoke tests and `cargo deny check all`.
+fmt, clippy, the full test suite, build, both smoke tests and `cargo deny check all`.
 
 This validates the documented ordering requirement: the frontend must be built before any
 cargo command that touches the studio crate.
