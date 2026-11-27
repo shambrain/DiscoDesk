@@ -18,23 +18,36 @@ OpenCode documents project custom agents, per-agent model selection, SKILL.md wo
 
 This is a project-specific decision, not a claim that OpenCode is universally better.
 
-## 3. Role routing
+## 3. Current DiscoDesk model routing — OpenCode Go baseline
 
-| Role | Recommended model class | Economical option |
-|---|---|---|
-| Lead/coordinator | Frontier reasoning | DeepSeek V4 Pro |
-| Systems architect | Frontier reasoning | DeepSeek V4 Pro |
-| Rust engine | Strong coding/reasoning for core contracts | Flash for bounded code + tests |
-| Audio DSP | Strong reasoning for DSP math/real-time design | Flash for deterministic fixtures |
-| Graphics | Strong coding/reasoning for GPU lifecycle | Flash for small shader changes with preview tests |
-| Platform integration | Frontier reasoning for OS/FFI/lifecycle | Flash for well-bounded adapter changes |
-| Image intelligence | Strong model for checkpoint/inference integration | Flash for preprocessing |
-| Tauri UI | Capable coding model | Flash/local for isolated components |
-| Desktop automation | Strong systems/platform reasoning | Flash after interfaces are fixed |
-| QA/licensing | Independent read-only model | Second independent model |
-| Steam/package | Strong security/API model | Flash for bounded schema work |
+The repository uses two distinct routing layers. The native OpenCode primary agent coordinates the project; OMO Slim supplies its own specialist agents. The project lead and OMO Orchestrator are separate agents, intentionally assigned the same model.
 
-Do not pin model IDs in agent files until providers are connected and exact IDs are verified with OpenCode /models.
+| Agent | Provider/model ID | Variant | Configuration source |
+|---|---|---|---|
+| `discodesk-lead` | `opencode-go/minimax-m3` | Provider default | `.opencode/agents/discodesk-lead.md` |
+| OMO Orchestrator | `opencode-go/minimax-m3` | `thinking` | `.opencode/oh-my-opencode-slim.json` |
+| OMO Oracle | `opencode-go/qwen3.8-max` | `xhigh` | `.opencode/oh-my-opencode-slim.json` |
+| OMO Explorer | `opencode-go/deepseek-v4.1-flash` | `high` | `.opencode/oh-my-opencode-slim.json` |
+| OMO Designer | `opencode-go/kimi-k2.7-code` | Provider default | `.opencode/oh-my-opencode-slim.json` |
+| OMO Fixer | `opencode-go/deepseek-v4.1-flash` | `high` | `.opencode/oh-my-opencode-slim.json` |
+| OMO Observer | `opencode-go/mimo-v2.5` | Provider default | `.opencode/oh-my-opencode-slim.json` |
+
+The project-local OMO file defines only the `opencode-go` preset's six model assignments. It deliberately does not set the active preset, duplicate user-level skills/permissions/MCP settings, or contain credentials. The active preset remains a user choice; the current developer environment selected `opencode-go`. OMO Slim merges project configuration with the user configuration, and higher-precedence root agent or native host overrides can still take precedence. Do not add a top-level OMO `agents` override for a value that must vary by preset.
+
+The `discodesk-lead` model is pinned in its native OpenCode agent file. The OMO Orchestrator is not the same session/agent as `discodesk-lead`; matching their model does not merge their identities or automatically route every lead action through OMO.
+
+### Evidence and verification boundary
+
+The local OMO Slim 3.0.8 diagnostic supplied for this project reported a valid configuration, the `opencode-go` preset applied, and matching effective model/variant state for all six OMO agents. The model names are also listed in the OpenCode Go model catalogue. This establishes configuration resolution, not a successful live inference or tool-call test for every agent. After changing models or creating a new session, verify `/models`, ping each agent, and complete the tool-call smoke test in Section 7.
+
+OMO Slim v3.0.8 declares `opencode >=2.3.0` in its package engine requirement. Verify the installed OpenCode host with `opencode --version`; a passing standalone `doctor` invocation does not by itself prove host-version compatibility.
+
+### Sources
+
+- OpenCode custom agent model/frontmatter configuration: https://opencode.ai/docs/agents/
+- OpenCode Go model catalogue: https://docs.opencode.ai/docs/go/
+- OMO Slim v3.0.8 configuration and precedence: https://github.com/alvinunreal/oh-my-opencode-slim/blob/v3.0.8/docs/configuration.md
+- OMO Slim v3.0.8 package engine requirement: https://github.com/alvinunreal/oh-my-opencode-slim/blob/v3.0.8/package.json
 
 ## 4. Current official DeepSeek API details
 
@@ -63,12 +76,12 @@ Claude Code subscription usage and Anthropic API-key usage are different billing
 
 ## 6. Recommended practical configuration
 
-1. Keep OpenCode and current repository agents/skills.
-2. Connect DeepSeek via OpenCode's official /connect provider flow and select the current model from /models.
-3. Test read/search, one disposable edit, shell/test calls, three consecutive tool-call turns and resume/compaction.
-4. Add Anthropic API as a separate provider only if the user accepts separate API billing and wants Opus in OpenCode.
-5. Assign a strong model to coordinator/architect and independent review; use cheaper models for bounded implementation.
-6. Use LM Studio for local navigation, triage, simple scaffolding and repetitive tasks—not as sole reviewer for production-critical native code.
+1. Keep OpenCode as the only primary source-writing harness and use the repository's pinned `discodesk-lead` model.
+2. Keep the active OMO Slim preset on `opencode-go` for the model lineup in Section 3. The project override intentionally contains model assignments only; user-level authentication, MCP servers, skills and feature settings remain outside Git.
+3. After changing the project model files, start a new OpenCode session or explicitly reselect the model for an existing session. OpenCode stores a session's selected model independently from the default agent.
+4. Run `/models`, then ping all six OMO agents and the project lead. Complete the disposable-edit, shell/test and consecutive-tool-call smoke test before autonomous implementation.
+5. Use LM Studio for local navigation, triage, summaries and simple scaffolding—not as the sole reviewer for production-critical native code.
+6. Add Anthropic or direct DeepSeek API providers only as deliberate alternatives with separate authentication/billing. Do not replace the Go baseline without a documented benchmark or provider failure.
 7. Optionally use Claude Code as a separate plan/review environment. It should write a plan or report; OpenCode stays the source-changing owner. Never allow both tools to edit the same worktree at once.
 
 ## 7. DeepSeek tool-call smoke test
