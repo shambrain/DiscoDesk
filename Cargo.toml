@@ -74,3 +74,10 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[profile.release-with-symbols]
+# Optimized native-debugging/profile build for Visual Studio.
+# Do not use this profile for ordinary distribution artifacts.
+inherits = "release"
+debug = 2
+strip = "none"

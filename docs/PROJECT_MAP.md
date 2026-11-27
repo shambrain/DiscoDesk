@@ -3,6 +3,7 @@
 Use this map to navigate without loading the entire architecture and research corpus for every bounded task.
 
 ## Start here
+- docs/VISUAL_STUDIO_WORKFLOW.md — Visual Studio Open Folder, MSVC/SDK setup, debugging and local commit helper.
 - AGENTS.md — global invariants.
 - docs/IMPLEMENTATION_STATE.md — actual implementation and current acceptance gate.
 - OPENCODE_MASTER_DIRECTIVE.md — execution policy and acceptance gates.

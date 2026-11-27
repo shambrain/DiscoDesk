@@ -93,6 +93,18 @@ cargo test --workspace --all-features
 cargo build --workspace
 ```
 
+## Visual Studio 2026 development
+
+DiscoDesk supports Visual Studio Open Folder for Windows-native debugging and diagnostics while Cargo remains the authoritative Rust build system. The repository includes Community and Build Tools component manifests, tracked Open Folder tasks/debug profiles, and PowerShell environment/commit helpers.
+
+- [Visual Studio workflow](docs/VISUAL_STUDIO_WORKFLOW.md)
+- [Community 2026 component configuration](.vsconfig)
+- [Build Tools 2026 component configuration](vsconfig/BuildTools-2026.vsconfig)
+- [Visual Studio environment Doctor](scripts/vs/Invoke-DiscoDeskVS.ps1)
+- [Safe explicit-path Git commit helper](scripts/git/Commit-DiscoDesk.ps1)
+
+Open the repository with **Visual Studio > File > Open > Folder**. Do not create a C++ solution for the Rust workspace. F5 debugging becomes available when the actual engine binary source is present and the Cargo build succeeds.
+
 ## OpenCode documentation
 
 - [Agents](https://opencode.ai/docs/agents/)

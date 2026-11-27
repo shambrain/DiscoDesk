@@ -191,6 +191,8 @@ Inspect the actual development environment before selecting versions:
 - Windows edition/build and shell version.
 - Rust stable toolchain and target triple.
 - MSVC/Visual Studio Build Tools and Windows SDK.
+- Visual Studio Community/Build Tools product channel, vswhere instance, C++ workload, MSVC x64/x86, linker, MSBuild, CMake and installed Windows SDK components.
+- Visual Studio Open Folder support, .vsconfig reproducibility, Cargo task integration, debugger launch profiles and symbol-preserving profile.
 - GPU adapter, driver and available D3D12/Vulkan backends.
 - Node/Bun version and package manager.
 - Tauri prerequisites and WebView2 runtime.
@@ -211,6 +213,10 @@ Do not implement wallpaper injection, global hooks, model inference or Workshop 
 
 Acceptance:
 - Check/build/test on the actual supported Windows target.
+- Visual Studio Doctor selects the installed stable VS 18.x MSVC toolchain, initializes the x64 developer environment and verifies Cargo without installing or changing Rust.
+- Visual Studio Open Folder tasks call Cargo/scripts/check.ps1; Cargo remains the single build authority and no placeholder C++ solution is introduced.
+- Debug and optimized-with-symbols profiles retain usable PDB/debug information; the normal stripped release profile remains unchanged.
+- F5 is not accepted until the actual engine binary source exists, builds and loads symbols in the native debugger.
 - CI reproduces the same commands.
 - Engine and Studio are separate processes.
 - IPC ownership, versioning, permissions and error behavior are documented.

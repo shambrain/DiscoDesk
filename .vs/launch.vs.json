@@ -1,0 +1,20 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "target\\debug\\discodesk-engine.exe",
+      "projectTarget": "",
+      "name": "DiscoDesk Engine (Debug)",
+      "args": []
+    },
+    {
+      "type": "default",
+      "project": "target\\release-with-symbols\\discodesk-engine.exe",
+      "projectTarget": "",
+      "name": "DiscoDesk Engine (Optimized + Symbols)",
+      "args": []
+    }
+  ]
+}

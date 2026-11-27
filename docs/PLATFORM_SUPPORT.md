@@ -159,3 +159,42 @@ currently `unverified`:
 
 **No cross-platform or multi-vendor claim may be published from the single-host data in
 this file.**
+
+
+## 8. Visual Studio development environment and integration
+
+### 8.1 Installed product inventory from screenshot
+
+The Visual Studio Installer screenshot supplied on 2026-11-27 shows:
+
+| Product | Screenshot state | Interpretation |
+|---|---|---|
+| Visual Studio Community 2026 Insiders | Installed listing; product update waiting to download at 0% | IDE product is registered; the displayed pending update is not installed evidence |
+| Visual Studio Build Tools 2026 | October 2026 Feature Update 18.11.1; update available for November 2026 Feature Update 18.12.1 | Installed stable 18.x native toolchain; keep 18.11.1 until an update is deliberately applied |
+| Visual Studio Build Tools 2019 | 16.11.58; update available for 16.11.63 | Legacy toolchain remains installed; it is not the preferred DiscoDesk compiler |
+
+The developer's PowerShell probe separately reported MSVC 14.51.36231 and Windows SDK versions 10.0.19041.0 and 10.0.26100.0. The previous probe did not establish the path to devenv.exe or verify the Community IDE's Open Folder/debugger launch; run the repository Doctor for that.
+
+### 8.2 Project integration
+
+| Capability | Repository integration | Status |
+|---|---|---|
+| Community workload configuration | Root .vsconfig | Added; component import not yet run |
+| Build Tools workload configuration | vsconfig/BuildTools-2026.vsconfig | Added; component import not yet run |
+| Open Folder build tasks | .vs/tasks.vs.json | Added; not yet run in Visual Studio |
+| Native debug launch profiles | .vs/launch.vs.json | Added; binary/debugger launch not yet verified |
+| Environment inspection | scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor | Added; local Windows execution pending |
+| Optimized build with symbols | Cargo profile release-with-symbols | Added; not built yet |
+| Explicit-path local commit helper | scripts/git/Commit-DiscoDesk.ps1 | Added; Windows execution pending |
+
+### 8.3 Toolchain selection
+
+The helper prefers a stable Visual Studio 18.x installation with the MSVC x64/x86 component and selects Build Tools when it is available. It imports the x64 developer environment from VsDevCmd.bat and adds the existing rustup Cargo directory when present. It does not install Rust, upgrade Visual Studio or alter the pinned rust-toolchain.toml.
+
+Community 2026 Insiders is treated as an IDE candidate, not the release compiler baseline. Updates shown as pending in the screenshot are not claimed as installed.
+
+### 8.4 Known public-main build prerequisite
+
+At public main commit 2912a7e5b356301121c2956b301fc56dd364b23d, apps/discodesk-engine/Cargo.toml declares src/main.rs as the binary path, but apps/discodesk-engine/src/main.rs is absent from the public tree. The VS build helper checks for the real source and stops with an explicit message rather than fabricating a program. The F5 launch profiles are prepared for the eventual executable, but engine build/debug acceptance remains pending until the real entry point is committed and builds successfully.
+
+The user may have uncommitted local engine files not present in public main; check the local checkout before drawing conclusions about local work.

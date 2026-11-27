@@ -35,3 +35,15 @@ CI runs the same commands, in the same order, with the same toolchain channel th
 
 CI at Gate 0 proves only that the repository builds, lints, tests and audits on the
 supported Windows target. It is not a product capability claim.
+
+
+## Visual Studio local workflow
+
+The Windows repository also includes Visual Studio Open Folder tasks and debug profiles. They use the same Cargo commands as the local scripts; Visual Studio/MSBuild is not a second Rust build system.
+
+- [Visual Studio 2026 workflow](../docs/VISUAL_STUDIO_WORKFLOW.md)
+- [Community .vsconfig](../.vsconfig)
+- [Build Tools .vsconfig](../vsconfig/BuildTools-2026.vsconfig)
+- [Environment Doctor](../scripts/vs/Invoke-DiscoDeskVS.ps1)
+
+CI remains the automated acceptance authority. The local Visual Studio debugger is used for native inspection and profiling on the developer's Windows machine.

@@ -21,6 +21,7 @@ Measured, not assumed. Full table with the exact probe command per row:
 | OS | Windows 10 build 19045, x64 |
 | Rust | stable **1.100.0**, `x86_64-pc-windows-msvc`, `rustfmt` + `clippy` |
 | MSVC | Build Tools 2019 (14.29) **and** 2026 (14.51) |
+| Visual Studio IDE | Community 2026 Insiders listed in Installer; update pending at 0% in screenshot |
 | Windows SDK | 10.0.19041.0 and 10.0.26100.0 |
 | Node / npm | 26.12.1 / 11.20.0 |
 | WebView2 Runtime | 158.0.4370.33 |
@@ -51,6 +52,13 @@ Two environment facts shape the plan:
 | CI | Format, lint, test, build, dependency licence/advisory audit |
 | Docs | `PLATFORM_SUPPORT.md`, `ADR/` 0001–0009, this plan, updated map and state |
 | Legal | `LICENSE` (honestly marked undecided), `THIRD_PARTY_NOTICES.md` |
+| Windows IDE | Visual Studio Open Folder tasks/debug profiles, two .vsconfig manifests, environment Doctor and explicit-path Git helper |
+
+### 2.1.1 Visual Studio integration
+
+Visual Studio is integrated as an IDE/native-debugging environment, not as a second build system. Cargo remains authoritative. Use Open Folder, tracked .vs task/launch JSON, root Community .vsconfig and separate Build Tools .vsconfig. No generated C++ project or duplicate MSBuild graph is allowed. See [VISUAL_STUDIO_WORKFLOW.md](VISUAL_STUDIO_WORKFLOW.md) and ADR-0010.
+
+The public main snapshot checked for this plan lacks apps/discodesk-engine/src/main.rs even though its binary manifest declares that path. The Visual Studio helper must fail clearly until the real entry point is committed; do not create a fake entry point to satisfy F5.
 
 ### 2.2 Explicitly out of scope
 
@@ -147,6 +155,7 @@ a read-only mirror of engine state and re-reads it on every reconnect (`ADR-0001
 | Directive §9 requirement | How it is proven |
 |---|---|
 | Check/build/test on the actual Windows target | `scripts/check.ps1`: fmt, clippy `-D warnings`, test, build — all on `x86_64-pc-windows-msvc` with 1.100.0 |
+| Visual Studio integration | `scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor` locates stable VS 18.x, imports VsDevCmd, reports MSVC/SDK/Rust/WebView2 and preserves the pinned Rust toolchain |
 | CI reproduces the same commands | `.github/workflows/ci.yml` runs the same command list on `windows-2025` |
 | Engine and Studio are separate processes | Two distinct binaries; an integration test drives the engine over a real pipe and asserts the Studio-side client fails cleanly when the engine is killed |
 | IPC ownership documented | `ADR-0002`, `docs/IPC_PROTOCOL.md` |

@@ -43,6 +43,15 @@ Use current vendor documentation, maintained upstream repositories, exact OS ver
 - Never log raw PCM, API keys, private paths or user image contents.
 - Pin dependencies and review model weights separately from code licenses.
 
+## Visual Studio and Windows development
+
+- Cargo remains the authoritative Rust build/test system; Visual Studio is the IDE, native debugger and Windows diagnostics environment.
+- Use Visual Studio Open Folder with the tracked `.vs/tasks.vs.json` and `.vs/launch.vs.json`; do not create a fake C++ solution or duplicate MSBuild graph.
+- Use the selected stable Visual Studio 18.x MSVC x64 toolchain and Windows SDK through `scripts/vs/Invoke-DiscoDeskVS.ps1`.
+- Preserve the existing stripped `release` profile. Use `release-with-symbols` for optimized native debugging/profiling.
+- Do not claim F5 works until the declared engine binary source exists and the corresponding Cargo target builds.
+- Never install/update IDE components automatically from project scripts; use the reviewed `.vsconfig` files and Visual Studio Installer.
+
 ## Native agent model routing
 
 Every native agent under `.opencode/agents/` must have an explicit OpenCode `model:` in YAML frontmatter. Keep assignments aligned with `docs/AI_TOOLING_DECISION.md`. OpenCode otherwise lets a subagent inherit the parent session model. OMO Slim's six managed agents are separate and remain configured in `.opencode/oh-my-opencode-slim.json`. Preserve prompt bodies, permission rules and skill grants when changing model routing.
