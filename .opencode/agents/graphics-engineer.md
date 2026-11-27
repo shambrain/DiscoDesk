@@ -1,6 +1,7 @@
 ---
 description: Implements DiscoDesk wgpu rendering, WGSL shaders, preview surfaces, image layers, subtle motion and GPU resource lifecycle.
 mode: subagent
+model: opencode-go/kimi-k2.7-code
 permissions:
   - action: skill
     resource: "*"

@@ -1,7 +1,7 @@
 ---
 description: Coordinates DiscoDesk product implementation, delegates specialist tasks, enforces architecture and phase acceptance gates.
 mode: primary
-model: opencode-go/minimax-m3
+model: opencode-go/minimax-m3#thinking
 permissions:
   - action: subagent
     resource: "*"

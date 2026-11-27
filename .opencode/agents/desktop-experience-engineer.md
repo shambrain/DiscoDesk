@@ -1,6 +1,7 @@
 ---
 description: Implements DiscoDesk wallpaper observation, per-monitor cache reuse, auto-reaction, Magic Wand and smart local notifications after the Windows MVP milestone.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: skill
     resource: "*"

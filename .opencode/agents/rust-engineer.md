@@ -1,6 +1,7 @@
 ---
 description: Implements and tests DiscoDesk Rust crates, engine lifecycle, IPC, safe concurrency and native core services.
 mode: subagent
+model: opencode-go/deepseek-v4.1-flash#high
 permissions:
   - action: skill
     resource: "*"

@@ -1,6 +1,7 @@
 ---
 description: Designs and reviews DiscoDesk system boundaries, crate contracts, IPC, state machines, packages and architecture decisions.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: skill
     resource: "*"

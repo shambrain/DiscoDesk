@@ -1,6 +1,7 @@
 ---
 description: Designs DiscoDesk package validation, Steamworks integration, Workshop publishing and commercial distribution readiness.
 mode: subagent
+model: opencode-go/deepseek-v4.1-flash#high
 permissions:
   - action: skill
     resource: "*"

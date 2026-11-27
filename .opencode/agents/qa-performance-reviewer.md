@@ -1,6 +1,7 @@
 ---
 description: Read-only reviewer for DiscoDesk correctness, regression risk, testing, real-time safety, visual comfort and performance evidence.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: edit
     resource: "*"

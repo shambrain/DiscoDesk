@@ -1,6 +1,7 @@
 ---
 description: Read-only researcher that verifies current APIs, OS version requirements, scientific claims, model licenses and third-party distribution terms.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: edit
     resource: "*"

@@ -32,7 +32,48 @@ The repository uses two distinct routing layers. The native OpenCode primary age
 | OMO Fixer | `opencode-go/deepseek-v4.1-flash` | `high` | `.opencode/oh-my-opencode-slim.json` |
 | OMO Observer | `opencode-go/mimo-v2.5` | Provider default | `.opencode/oh-my-opencode-slim.json` |
 
-The project-local OMO file defines only the `opencode-go` preset's six model assignments. It deliberately does not set the active preset, duplicate user-level skills/permissions/MCP settings, or contain credentials. The active preset remains a user choice; the current developer environment selected `opencode-go`. OMO Slim merges project configuration with the user configuration, and higher-precedence root agent or native host overrides can still take precedence. Do not add a top-level OMO `agents` override for a value that must vary by preset.
+The project-local OMO file defines only the `opencode-go` preset's six model assignments.
+
+### 3.1 Native DiscoDesk agent assignments
+
+These are OpenCode project agents in `.opencode/agents/`, separate from OMO Slim's six managed agents. Every native agent now has an explicit model in its YAML frontmatter; this prevents silent inheritance of the parent session model.
+
+| Native DiscoDesk agent | Model | Variant |
+|---|---|---|
+| `discodesk-lead` | `opencode-go/minimax-m3` | `thinking` |
+| `systems-architect` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `rust-engineer` | `opencode-go/deepseek-v4.1-flash` | `high` |
+| `audio-dsp-engineer` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `graphics-engineer` | `opencode-go/kimi-k2.7-code` | Provider default |
+| `platform-engineer` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `image-intelligence-engineer` | `opencode-go/deepseek-v4.1-flash` | `high` |
+| `tauri-ui-engineer` | `opencode-go/kimi-k2.7-code` | Provider default |
+| `qa-performance-reviewer` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `research-licensing-auditor` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `steam-distribution-engineer` | `opencode-go/deepseek-v4.1-flash` | `high` |
+| `desktop-experience-engineer` | `opencode-go/qwen3.8-max` | `xhigh` |
+| `product-ux-designer` | `opencode-go/kimi-k2.7-code` | Provider default |
+
+Routing rationale:
+- MiniMax M3 coordinates the main project.
+- Qwen3.8 Max is reserved for architecture, DSP design, native platform decisions, desktop automation, research and independent verification.
+- DeepSeek V4.1 Flash handles bounded Rust, image and package implementation.
+- Kimi K2.7 Code handles renderer and Studio/UX implementation.
+- Kimi is left at its provider default rather than assigning an unverified reasoning variant.
+
+The model IDs are provider-qualified using OpenCode Go's documented `opencode-go/<model-id>` convention. Variant selection uses OpenCode's documented `provider/model#variant` syntax. The current OMO Go preset already uses `thinking`, `xhigh` and `high` for the corresponding models. The catalogue can change; confirm the model still appears in `/models` before running autonomous work.
+
+OpenCode's native subagent behavior is explicit: a subagent uses its configured model, or inherits its parent session model when none is set. This is the reason all 13 project agents now pin their own model.
+
+The native project lead and OMO Orchestrator are distinct agents, although both use MiniMax M3. The six OMO roles remain configured in `.opencode/oh-my-opencode-slim.json`.
+
+### Source references
+
+- OpenCode agent model and variant frontmatter: https://opencode.ai/docs/agents/
+- OpenCode Go current model IDs/catalogue: https://opencode.ai/docs/console/go
+- OMO Slim v3.0.8 configuration reference: https://github.com/alvinunreal/oh-my-opencode-slim/blob/v3.0.8/docs/configuration.md
+- OMO Slim project-local customization and precedence: https://github.com/alvinunreal/oh-my-opencode-slim/blob/v3.0.8/docs/project-local-customization.md
+ It deliberately does not set the active preset, duplicate user-level skills/permissions/MCP settings, or contain credentials. The active preset remains a user choice; the current developer environment selected `opencode-go`. OMO Slim merges project configuration with the user configuration, and higher-precedence root agent or native host overrides can still take precedence. Do not add a top-level OMO `agents` override for a value that must vary by preset.
 
 The `discodesk-lead` model is pinned in its native OpenCode agent file. The OMO Orchestrator is not the same session/agent as `discodesk-lead`; matching their model does not merge their identities or automatically route every lead action through OMO.
 

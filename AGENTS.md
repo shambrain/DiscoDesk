@@ -43,6 +43,10 @@ Use current vendor documentation, maintained upstream repositories, exact OS ver
 - Never log raw PCM, API keys, private paths or user image contents.
 - Pin dependencies and review model weights separately from code licenses.
 
+## Native agent model routing
+
+Every native agent under `.opencode/agents/` must have an explicit OpenCode `model:` in YAML frontmatter. Keep assignments aligned with `docs/AI_TOOLING_DECISION.md`. OpenCode otherwise lets a subagent inherit the parent session model. OMO Slim's six managed agents are separate and remain configured in `.opencode/oh-my-opencode-slim.json`. Preserve prompt bodies, permission rules and skill grants when changing model routing.
+
 ## Token discipline
 
 Use project map and task-specific reads. Search symbols before opening large files. Research agents return summarized claims and source links. Keep tool output bounded. Create durable checkpoints before long fresh sessions. Do not confuse a large context window with efficient context usage.

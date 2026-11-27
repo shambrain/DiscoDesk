@@ -1,6 +1,7 @@
 ---
 description: Designs and implements DiscoDesk Studio with Tauri v2, React, TypeScript and FigCraft-driven interaction design.
 mode: subagent
+model: opencode-go/kimi-k2.7-code
 permissions:
   - action: skill
     resource: "*"

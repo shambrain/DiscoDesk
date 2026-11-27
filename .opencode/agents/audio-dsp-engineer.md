@@ -1,6 +1,7 @@
 ---
 description: Builds DiscoDesk audio capture interfaces, source selection, real-time PCM flow, psychoacoustic feature extraction and transient response.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: skill
     resource: "*"

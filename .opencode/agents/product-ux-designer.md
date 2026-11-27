@@ -1,6 +1,7 @@
 ---
 description: Designs and reviews DiscoDesk's calm Studio hierarchy, FigCraft components, creator workflows and accessibility.
 mode: subagent
+model: opencode-go/kimi-k2.7-code
 permissions:
   - action: skill
     resource: "*"

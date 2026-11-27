@@ -1,6 +1,7 @@
 ---
 description: Implements DiscoDesk local wallpaper analysis, depth-model adapters, deterministic vision maps, confidence handling and cached visual recipes.
 mode: subagent
+model: opencode-go/deepseek-v4.1-flash#high
 permissions:
   - action: skill
     resource: "*"

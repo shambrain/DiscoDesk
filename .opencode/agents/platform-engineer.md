@@ -1,6 +1,7 @@
 ---
 description: Implements and validates native Windows, macOS and Linux audio capture, wallpaper hosting, permissions and lifecycle adapters.
 mode: subagent
+model: opencode-go/qwen3.8-max#xhigh
 permissions:
   - action: skill
     resource: "*"
