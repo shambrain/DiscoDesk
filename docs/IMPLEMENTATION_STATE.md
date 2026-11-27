@@ -191,7 +191,16 @@ IDE `C:\Program Files\Microsoft Visual Studio\18\Insiders`, engine entry point p
 The Studio changes are verified locally (§3.1–§3.4) and have their own workflow run
 pending. It is **not** claimed green until it completes.
 
-### 3.8 Not verified
+### 3.8 Clean-checkout reproducibility
+
+A fresh clone of commit `5c90e10` — no `target/`, no `node_modules/`, no `dist/` — ran the
+canonical script end to end and exited **0**: guards, frontend install/typecheck/tests/build,
+fmt, clippy, 123 tests, build, both smoke tests and `cargo deny check all`.
+
+This validates the documented ordering requirement: the frontend must be built before any
+cargo command that touches the studio crate.
+
+### 3.9 Not verified
 
 | Item | Status |
 |---|---|
@@ -272,6 +281,11 @@ Grouped by cause; each compiled cleanly or was invisible to a compile-only check
     incremented, which is why the fixtures were wrong, not the client.
 21. `tauri-build` requires `icons/icon.ico` for the Windows resource file even with
     bundling disabled; a provisional icon was generated and is disclosed in the notices.
+22. **The endpoint name was derived from `USERNAME`**, which was empty in this project's
+    own development shell, silently collapsing every account onto
+    `discodesk-engine-default`. Verified empirically by running the binaries. The segment
+    is now a hash of the account SID from the process token, and confirmed invariant under
+    `USERNAME=''`, `'Alice'` and `'SomeoneElse'`.
 
 ---
 

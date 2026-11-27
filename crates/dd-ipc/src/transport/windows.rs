@@ -243,7 +243,7 @@ unsafe fn take_wide_string(raw: PWSTR) -> String {
 ///
 /// The SID is read from the process token rather than guessed from a name, so
 /// it is correct for domain, local and Azure AD accounts alike.
-fn current_user_sid() -> IpcResult<String> {
+pub(crate) fn current_user_sid() -> IpcResult<String> {
     let mut token = HANDLE::default();
 
     // SAFETY:

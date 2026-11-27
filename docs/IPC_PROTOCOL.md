@@ -32,7 +32,7 @@ and adding one requires a new ADR.
 | Property | Windows | macOS / Linux |
 |---|---|---|
 | Kind | Named pipe | Unix domain socket |
-| Default path | `\\.\pipe\discodesk-engine-<user>` | `$XDG_RUNTIME_DIR/discodesk-engine-<user>.sock` |
+| Default path | `\\.\pipe\discodesk-engine-<segment>` | `$XDG_RUNTIME_DIR/discodesk-engine-<segment>.sock` |
 | Server | Engine | Engine |
 | Client | Studio | Studio |
 | Remote access | Refused (`PIPE_REJECT_REMOTE_CLIENTS`) | Filesystem permissions |
@@ -42,10 +42,21 @@ The engine is **always** the server. Studio never binds or listens. There is no 
 listener for DiscoDesk; no wildcard bind and no HTTP endpoint exists anywhere in the
 product.
 
-`<user>` is a sanitised form of `USERNAME`/`USER`, truncated to 32 characters. It exists
-so two accounts on one machine do not collide on one path. **Security does not depend on
-the name**: the descriptor on the Windows pipe restricts access regardless of what the
-pipe is called.
+`<segment>` is derived from the **account identity**, not from an environment variable:
+
+- **Windows:** the account SID from the process token, hashed with FNV-1a to a fixed
+  16-hex-character form (`u412f96d8994d1362`).
+- **Fallback (and Unix until Gate 8):** a sanitised `USERNAME`/`USER`, or `default`.
+
+This exists so two accounts on one machine do not collide on one path. **Security does not
+depend on the name**: the descriptor on the Windows pipe restricts access regardless of
+what the pipe is called.
+
+The SID is used rather than `USERNAME` because an environment variable can be empty or
+overridden. During this project's own verification, `USERNAME` was empty in the development
+shell, which silently collapsed every account onto `discodesk-engine-default`. A SID cannot
+be spoofed that way. It is hashed rather than embedded because a raw SID is up to ~45
+characters and truncating it would collide for accounts sharing a machine prefix.
 
 `--endpoint <path>` overrides the path. That bypasses the per-user default name but not
 the security descriptor.

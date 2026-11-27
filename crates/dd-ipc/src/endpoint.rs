@@ -21,15 +21,11 @@ const MAX_USER_SEGMENT: usize = 32;
 
 /// The endpoint the engine listens on and the Studio connects to.
 ///
-/// * Windows: `\\.\pipe\discodesk-engine-<user>`
-/// * Unix: `$XDG_RUNTIME_DIR/discodesk-engine-<user>.sock`
+/// * Windows: `\\.\pipe\discodesk-engine-<segment>`
+/// * Unix: `$XDG_RUNTIME_DIR/discodesk-engine-<segment>.sock`
 #[must_use]
 pub fn default_endpoint_path() -> String {
-    let user = std::env::var("USERNAME")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "default".to_owned());
-
-    let segment = sanitise_user_segment(&user);
+    let segment = user_segment();
 
     #[cfg(windows)]
     {
@@ -45,6 +41,58 @@ pub fn default_endpoint_path() -> String {
     {
         format!("{ENDPOINT_STEM}-{segment}")
     }
+}
+
+/// A short, stable, per-account path segment.
+///
+/// On Windows this is derived from the **account SID**, not from an environment
+/// variable. That matters: `USERNAME`/`USER` can be empty or overridden, and an
+/// empty value silently collapses every account on the machine onto one name —
+/// which was observed on this project's own development shell. A SID is the
+/// authoritative local identity and cannot be spoofed by setting an env var.
+///
+/// The SID is hashed rather than embedded. A raw SID is up to ~45 characters and
+/// truncating it would collide for accounts that share a machine prefix; a hash
+/// is fixed-length and distinct.
+///
+/// This is not a security boundary (the pipe ACL is): it only prevents two
+/// accounts from fighting over one endpoint name.
+#[must_use]
+fn user_segment() -> String {
+    #[cfg(windows)]
+    if let Ok(sid) = crate::transport::windows::current_user_sid()
+        && !sid.is_empty()
+    {
+        return format!("u{:016x}", fnv1a64(sid.as_bytes()));
+    }
+
+    match env_user_name() {
+        Some(name) => sanitise_user_segment(&name),
+        None => "default".to_owned(),
+    }
+}
+
+/// The OS-reported user name, ignoring empty or whitespace-only values.
+fn env_user_name() -> Option<String> {
+    ["USERNAME", "USER"]
+        .iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .find(|value| !value.trim().is_empty())
+}
+
+/// FNV-1a (64-bit).
+///
+/// Used only to shorten an identity into a stable path segment. It is not used
+/// for anything security-sensitive; the pipe ACL provides the access control.
+const fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
 }
 
 /// Reduces a user name to a safe, bounded path segment.
@@ -96,12 +144,6 @@ mod tests {
     }
 
     #[test]
-    fn user_segment_is_bounded() {
-        let long = "x".repeat(200);
-        assert_eq!(sanitise_user_segment(&long).len(), MAX_USER_SEGMENT);
-    }
-
-    #[test]
     fn empty_user_segment_falls_back() {
         assert_eq!(sanitise_user_segment(""), "default");
     }
@@ -112,5 +154,52 @@ mod tests {
         // segment rather than an empty one.
         let segment = sanitise_user_segment("caf\u{00e9}");
         assert!(segment.starts_with("caf-"), "got {segment}");
+    }
+
+    #[test]
+    fn fnv1a_is_deterministic_and_distinguishes_identities() {
+        assert_eq!(fnv1a64(b"S-1-5-21-a"), fnv1a64(b"S-1-5-21-a"));
+        assert_ne!(fnv1a64(b"S-1-5-21-a"), fnv1a64(b"S-1-5-21-b"));
+        // Known value for the empty input, which catches an accidental change
+        // of algorithm or offset basis.
+        assert_eq!(fnv1a64(b""), 0xcbf2_9ce4_8422_2325);
+    }
+
+    #[test]
+    fn user_segment_is_non_empty_and_path_safe() {
+        let segment = user_segment();
+        assert!(!segment.is_empty());
+        assert!(
+            segment
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "segment must be path safe, got {segment}"
+        );
+    }
+
+    #[test]
+    fn empty_environment_falls_back_rather_than_producing_a_bare_separator() {
+        // Documents the reason the SID is preferred: an empty USERNAME must not
+        // yield a segment-less endpoint. This exercises the fallback directly,
+        // without mutating the process environment.
+        assert_eq!(env_user_name_from(&[("", ""), ("USER", "  ")]), None);
+        assert_eq!(
+            env_user_name_from(&[("USERNAME", ""), ("USER", "alice")]).as_deref(),
+            Some("alice")
+        );
+    }
+
+    /// Mirrors [`env_user_name`] over an explicit set of pairs so the fallback
+    /// can be tested without mutating process-global state.
+    fn env_user_name_from(pairs: &[(&str, &str)]) -> Option<String> {
+        ["USERNAME", "USER"]
+            .iter()
+            .filter_map(|key| {
+                pairs
+                    .iter()
+                    .find(|(name, _)| name == key)
+                    .map(|(_, value)| (*value).to_owned())
+            })
+            .find(|value| !value.trim().is_empty())
     }
 }

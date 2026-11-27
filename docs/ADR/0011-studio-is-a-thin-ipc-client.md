@@ -44,9 +44,12 @@ Three concrete risks had to be resolved before writing the Studio:
 
 1. **`dd_ipc::endpoint::default_endpoint_path()` is the single derivation.** The
    engine and the Studio both call it. It is stable within a user session and
-   contains no process id, so either process can find the other. The Windows
-   transport keeps `per_process_endpoint_path()` for the separate case where a
-   test must avoid colliding with a running engine, and it is documented as such.
+   contains no process id, so either process can find the other. On Windows the
+   segment is a hash of the **account SID** from the process token, not of
+   `USERNAME`: an empty or overridden environment variable silently collapsed
+   every account onto one endpoint during verification. The Windows transport
+   keeps `per_process_endpoint_path()` for the separate case where a test must
+   avoid colliding with a running engine, and it is documented as such.
 2. **The Studio owns no engine state.** `EngineClient` sends a documented command
    and returns a parsed response. It caches a *connection*, never a status.
    `EngineView` is derived only from the bytes the engine sent.
