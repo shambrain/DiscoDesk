@@ -476,3 +476,155 @@ AI coding workflow:
 - DeepSeek official pricing/integration docs.
 - OpenCode issue #55684.
 - Reddit reports explicitly labeled as anecdotal in section 14.
+
+
+---
+
+## 16. Gate 0 dependency and toolchain register (verified)
+
+**Verified:** 27 November 2026. **Method:** primary sources only — the crates.io version
+API (`https://crates.io/api/v1/crates/<crate>`), the npm registry
+(`https://registry.npmjs.org/<package>`), the official Rust release channel manifests
+(`https://static.rust-lang.org/dist/channel-rust-*.toml`), the GitHub releases API and
+Microsoft Learn. Community posts were not used as evidence.
+
+This register exists because `AGENTS.md` requires a source URL, access date, version and
+SPDX licence identifier before a dependency is added, and because a version chosen from
+memory can be stale, can have raised its MSRV, or can carry a licence change.
+
+### 16.1 Toolchain
+
+| Item | Verified value | Source |
+|---|---|---|
+| Latest stable Rust | **1.100.0** (`0ef1bc386 2026-11-09`, channel date 2026-11-12) | `channel-rust-stable.toml` |
+| Previous stable | 1.99.1 (point release of 1.99.0, 2026-10-01) | `channel-rust-1.99.1.toml` |
+| Two-previous stable | 1.98.0 (2026-08-20), 1.98.1 point release | `channel-rust-1.98.0.toml` |
+| Bundled cargo / clippy / rustfmt | cargo 0.101.0, clippy 0.1.100, rustfmt 1.11.0 | `channel-rust-stable.toml` |
+| Current edition | 2024 (no 2027 edition exists) | Rust Edition Guide |
+| Edition 2024 requires | Rust 1.85.0+ | Rust 1.85.0 release notes |
+| Windows MSVC target tier | `x86_64-pc-windows-msvc` is Tier 1 with host tools | `platform-support.html` |
+| Minimum Visual Studio for Rust | VS 2017, "not actively tested in CI"; latest VS recommended | `platform-support/windows-msvc.html` |
+
+**Decision:** pin `1.100.0`. It is the current stable and matches what GitHub's
+`windows-2025` runner image ships, so local and CI agree without a download.
+
+**Caveat recorded as fact:** Rust's own MSVC page states VS 2017 is the nominal minimum
+but is *not actively tested in CI*, and recommends the latest Visual Studio. The 2019
+Build Tools toolset (14.29) on this host is therefore not a platform to rely on; the
+2026 toolset (14.51) is.
+
+### 16.2 Rust crates (Gate 0 set)
+
+| Crate | Pinned version | SPDX licence | MSRV | Notes |
+|---|---|---|---|---|
+| `serde` | 1.0.229 | MIT OR Apache-2.0 | 1.56 | |
+| `serde_json` | 1.0.154 | MIT OR Apache-2.0 | 1.71 | |
+| `thiserror` | 2.0.21 | MIT OR Apache-2.0 | 1.77 | |
+| `tracing` | 0.1.44 | **MIT only** | 1.65 | no Apache fallback |
+| `tracing-subscriber` | 0.3.23 | **MIT only** | 1.65 | =0.3.20 required by RUSTSEC-2025-0055 |
+| `tracing-appender` | 0.2.5 | **MIT only** | 1.63 | rotating file sink |
+| `clap` | 4.6.10 | MIT OR Apache-2.0 | 1.74 | derive feature |
+| `windows` | 0.62.2 | MIT OR Apache-2.0 | 1.82 | latest *published*; master 0.101.0 is unpublished |
+| `windows-sys` | 0.61.2 | MIT OR Apache-2.0 | 1.71 | not used at Gate 0 |
+
+Rejected or deferred, with reason:
+
+| Crate | Reason |
+|---|---|
+| `interprocess` 2.4.10 (0BSD OR Apache-2.0) | Local-socket types are runtime-dispatched enums, not OS primitives; async is Tokio-only; first-party UDS removed in 2.0.0. Hand-roll the named pipe instead. |
+| `once_cell` | Superseded by `std::sync::LazyLock` / `OnceLock` (stable since 1.80). |
+| `parking_lot` 0.13.0 | MSRV 1.95 and an avoidable dependency; `std::sync::Mutex` suffices at Gate 0. |
+| `tokio` | No async runtime is needed at Gate 0. Deferred to the gate that needs it (audio/GPU). |
+| `postcard` / `bincode` | The frame codec is hand-rolled; no serialisation framework needed for the framing layer. |
+| `uuid` / `sha2` | No content hashing or ID generation at Gate 0. `sha2` 0.11 also raised MSRV to 1.88. |
+
+### 16.3 Studio / frontend (verified, not yet added to the workspace)
+
+| Package | Latest verified | SPDX licence |
+|---|---|---|
+| `tauri` (crate) | 2.12.7 | Apache-2.0 OR MIT |
+| `tauri-build` | 2.7.6 | Apache-2.0 OR MIT |
+| `wry` | 0.58.2 | Apache-2.0 OR MIT |
+| `@tauri-apps/cli` | 2.12.6 | Apache-2.0 OR MIT |
+| `@tauri-apps/api` | 2.12.5 | Apache-2.0 OR MIT |
+| `vite` | 8.4.0 | MIT |
+| `@vitejs/plugin-react` | 6.3.0 | MIT |
+| `react` / `react-dom` | 19.3.1 | MIT |
+| `typescript` | 7.0.2 | Apache-2.0 |
+
+**Effective Studio MSRV is 1.92**, not the `tauri` crate's declared 1.90, because `wry`
+declares 1.92 and the Tauri workspace declares 1.92. 1.100.0 satisfies it.
+
+**Node:** Vite 8 requires `^20.19.0 || >=22.12.0`. Tauri names no minimum beyond "LTS".
+Recommend Node 24 LTS.
+
+**TypeScript is now on the 7.x line** (npm `latest` = 7.0.2). That is a behavioural
+change from 5.x, not a patch bump; it must be validated before pinning.
+
+**Bun is not used as the package manager.** Bun is MIT, but it statically links
+JavaScriptCore/WebKit, which is **LGPL-2**. Redistributing Bun would carry copyleft
+obligations. It is a personal developer tool only. Use npm or pnpm for the Studio build.
+
+### 16.4 Runtime components that are NOT open source
+
+This is a licence-boundary fact, not a code-dependency fact, and must not be glossed over
+in any "the app is MIT/Apache" statement:
+
+- **Microsoft Edge WebView2 Runtime** — proprietary Microsoft EULA, required at runtime on
+  the user's machine (or shipped as the Fixed Version, which adds roughly 250 MB).
+- **MSVC C/C++ runtime** — `static_vcruntime` statically links it; redistributable under
+  Microsoft's Visual C++ redistributable terms.
+- **`WebView2Loader.dll`** — an architecture-specific native DLL that must ship, or be
+  statically linked.
+
+The Rust and npm sources are permissive. The shipped Studio **binary** includes Microsoft
+components under separate terms.
+
+### 16.5 Security advisories checked
+
+RustSec advisory database: <https://github.com/RustSec/advisory-db>. Verified as fixed by
+the pinned (or minimum) version:
+
+| Advisory | Affected | Fixed in | Our status |
+|---|---|---|---|
+| RUSTSEC-2025-0055 / CVE-2025-58160 — ANSI-escape injection via logged user input | `tracing-subscriber < 0.3.20` | 0.3.20 | Pinned 0.3.23 |
+| RUSTSEC-2026-0384 / CVE-2026-115567 — race in `tokio::time::Interval` | tokio 1.54.0 | 1.54.1 | tokio not used |
+| RUSTSEC-2026-0007 / CVE-2026-25541 — integer overflow in `BytesMut::reserve` | bytes < 1.11.1 | 1.11.1 | bytes not used |
+| RUSTSEC-2026-0190 — unsoundness in `anyhow::Error::downcast_mut` | anyhow < 1.0.103 | 1.0.103 | anyhow not used |
+| CVE-2026-42184 / GHSA-7gmj-67g7-phm9 — Tauri origin confusion allowing remote pages to invoke local-only IPC | tauri = 2.11.0 | 2.11.1 | 2.12.7 when the Studio is added |
+
+`RUSTSEC-2025-0055` is directly relevant to DiscoDesk: it is a log-poisoning class bug,
+which is exactly why `docs/ADR/0007` forbids logging unredacted user-controlled strings.
+Transitive `rand`/`zerocopy` advisories must be confirmed empirically with
+`cargo deny check advisories` once `Cargo.lock` exists; they are not asserted here.
+
+### 16.6 CI actions
+
+| Action | Verified tag | Note |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | not v4 |
+| `dtolnay/rust-toolchain` | `v1` (floating) | pin via the `toolchain:` input |
+| `Swatinem/rust-cache` | v2.9.3 | |
+| `actions/upload-artifact` | v7.0.2 | |
+
+`codecov/codecov-action` is at v7.1.1 and `actions/setup-node` at v7.1.0; neither is used
+at Gate 0 (there is no coverage or Node build yet).
+
+**Runner:** `windows-latest` currently resolves to Windows Server 2025 (build
+10.0.26100, Windows SDK 10.0.26100.0). Two distinct Windows Server 2025 images exist —
+one with Visual Studio 2022 17.14 and one with VS 2026 18.12 — so the workflow pins
+`windows-2025` explicitly rather than relying on `-latest`.
+
+**`EmbarkStudios/cargo-deny-action` cannot be used here:** it is a Docker container
+action, and Docker actions do not run on Windows runners. CI installs `cargo-deny
+0.22.1` with cargo and invokes it directly.
+
+### 16.7 Unverified items
+
+Stated explicitly so they are not mistaken for facts:
+
+| Item | Status |
+|---|---|
+| Current WebView2 Evergreen stable version from Microsoft | **Unverified** — `edge.microsoft.com/updates/WebView2RuntimeAvailability.xml` returned HTTP 400 to every request variant attempted. The installed `158.0.4370.33` was read from the local registry, not from Microsoft's feed. |
+| Minimum Visual Studio version Tauri v2 officially supports | **Unverified** — Tauri documents only "Microsoft C++ Build Tools" with the Desktop development with C++ workload, naming no version floor. |
+| Windows SDK version required by Tauri/wry | **No version is pinned by either.** Recommendation: use 10.0.26100.0 and validate with an actual build. |

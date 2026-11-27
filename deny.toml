@@ -1,0 +1,142 @@
+# cargo-deny configuration for the DiscoDesk workspace.
+#
+# This file is the single source of truth for the dependency license policy.
+# The authoritative generated third-party attribution list is produced by
+# `cargo deny` / the CI `licenses` job and published into
+# THIRD_PARTY_NOTICES.md.
+#
+# NOTE: `cargo-deny` is not installed on the current development host, so the
+# checks below were authored and schema-reviewed but the `cargo deny check all`
+# run is NOT locally verified. CI runs it.
+
+[graph]
+# Only direct dependencies are roots; transitive crates are still checked by
+# cargo-deny against the same allowlist.
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[licenses]
+# Licenses that are acceptable for commercial redistribution of the
+# DiscoDesk engine binary.
+#
+# `0BSD` is required because several crates in the dependency graph are
+# published as `0BSD OR Apache-2.0` and cargo-deny evaluates each option
+# independently.
+#
+# `MPL-2.0` is weak file-level copyleft. It is allowed only because it is a
+# recognised option in the graph; if an MPL-licensed crate is ever vendored,
+# that file must be disclosed in THIRD_PARTY_NOTICES.md and its modifications
+# published. The Gate 0 dependency set contains no MPL crate.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+]
+
+# `clarify` is an array of inline tables describing per-crate license
+# clarifications, NOT a list of license identifiers. Gate 0 has no crate that
+# needs clarification, so the list is empty.
+clarify = []
+
+# Licenses that are refused outright.
+deny = [
+    "AGPL-3.0",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "GPL-2.0",
+    "GPL-2.0-only",
+    "GPL-2.0-or-later",
+    "GPL-3.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "LGPL-2.1",
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0",
+    "LGPL-3.0-only",
+    "LGPL-3.0-or-later",
+    "CC-BY-NC-1.0",
+    "CC-BY-NC-2.0",
+    "CC-BY-NC-2.5",
+    "CC-BY-NC-3.0",
+    "CC-BY-NC-4.0",
+    "CC-BY-NC-ND-1.0",
+    "CC-BY-NC-ND-2.0",
+    "CC-BY-NC-ND-2.5",
+    "CC-BY-NC-ND-3.0",
+    "CC-BY-NC-ND-4.0",
+    "CC-BY-NC-SA-1.0",
+    "CC-BY-NC-SA-2.0",
+    "CC-BY-NC-SA-2.5",
+    "CC-BY-NC-SA-3.0",
+    "CC-BY-NC-SA-4.0",
+    "CDDL-1.0",
+    "CDDL-1.1",
+    "EPL-1.0",
+    "EPL-2.0",
+    "OSL-3.0",
+    "SSPL-1.0",
+]
+
+# Dependencies whose license is unknown or which carry an unclear grant are
+# refused rather than assumed acceptable.
+unknown = "deny"
+
+# Dev-dependencies are part of what CI installs, so they are audited too.
+include-dev = true
+
+# The project itself has no published SPDX license yet; see LICENSE and
+# docs/ADR/. `private.ignore = true` exempts unpublished workspace crates
+# from the license check.
+exceptions = []
+
+[licenses.private]
+# Ignore unpublished workspace crates and their unpublished path dependencies.
+ignore = true
+
+[bans]
+# Multiple versions of the same crate are allowed (the dependency graph
+# requires them today), but they are reported so that duplication is a
+# conscious decision rather than an accident.
+multiple-versions = "warn"
+wildcards = "deny"
+deny = []
+# Crates that must never appear in the dependency graph.
+allow = []
+skip = []
+skip-tree = []
+
+[advisories]
+# `cargo deny check advisories` reads the RustSec advisory database.
+#
+# Minimum fixed versions that the resolved Cargo.lock must satisfy:
+#   tracing-subscriber >= 0.3.20   (RUSTSEC-2025-0055, ANSI-escape log poisoning)
+#   anyhow          >= 1.0.103     (RUSTSEC-2026-0190)  -- not used at Gate 0
+#   bytes           >= 1.11.1                        -- not used at Gate 0
+#   tokio           >= 1.54.1                        -- not used at Gate 0
+#   tauri           >= 2.11.1     (CVE-2026-42184)   -- Studio crate, Gate 4
+#
+# The pins in the workspace Cargo.toml already satisfy every applicable
+# minimum; the advisories job in CI re-verifies this on each dependency bump.
+version = 2
+unmaintained = "warn"
+unsound = "deny"
+yanked = "deny"
+# Advisory database version. Keep updated; CI fails when it is stale.
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

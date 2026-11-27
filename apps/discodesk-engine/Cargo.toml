@@ -1,0 +1,23 @@
+[package]
+name = "discodesk-engine"
+description = "DiscoDesk background engine process."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "discodesk-engine"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+tracing = { workspace = true }
+dd-core = { workspace = true }
+dd-diagnostics = { workspace = true }
+dd-ipc = { workspace = true }

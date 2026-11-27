@@ -1,0 +1,56 @@
+# Rust build output
+/target
+**/target
+
+# Cargo / Rust
+**/*.rs.bk
+*.pdb
+
+# Node / frontend
+**/node_modules
+**/dist
+**/build
+**/.vite
+**/.next
+**/out
+
+# Tauri / generated bindings
+**/gen
+**/gen/schemas
+
+# Local diagnostic logs (never committed)
+*.log
+logs/
+**/logs/
+.dd-logs/
+
+# Local runtime state
+*.pid
+*.sock
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.zed/
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+Desktop.ini
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Build scratch
+/out
+/tmp/
+scratch/

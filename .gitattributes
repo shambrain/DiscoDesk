@@ -1,0 +1,59 @@
+# Normalise line endings so `cargo fmt --check` and diffs are identical on every
+# OS. Without this, a Windows checkout (core.autocrlf=true) and a Linux checkout
+# disagree on CRLF/LF and `cargo fmt --check` becomes machine-dependent.
+#
+# Rule: the repository stores LF. Working trees get LF for source files on every
+# platform. `rustfmt.toml` must therefore use newline_style = "Unix".
+
+* text=auto
+
+# Rust
+*.rs        text eol=lf
+*.toml      text eol=lf
+Cargo.lock  text eol=lf
+
+# Web / Studio
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.svg       text eol=lf
+
+# Shaders
+*.wgsl      text eol=lf
+
+# Scripts and CI
+*.ps1       text eol=lf
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Docs
+*.md        text eol=lf
+*.txt       text eol=lf
+
+# Windows-only build scripts must keep CRLF for MSBuild compatibility.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary assets: never normalise, never diff.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.gif       binary
+*.ico       binary
+*.onnx      binary
+*.ddpkg     binary
+*.ddpreset  binary
+*.exe       binary
+*.dll       binary
+*.pdb       binary
+*.lib       binary
+*.zip       binary
+*.r16       binary
+*.r8        binary

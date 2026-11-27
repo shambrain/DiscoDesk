@@ -1,0 +1,32 @@
+# License
+
+**Status: NOT YET DECIDED. There is no license grant in this file yet.**
+
+As of 2026-11-27 no license has been chosen for DiscoDesk. Nothing in this
+repository — `README.md`, `AGENTS.md`, `ARCHITECTURE.md`, `RESEARCH.md`,
+`OPENCODE_MASTER_DIRECTIVE.md` or `docs/` — states a license, and no prior
+decision record exists under `docs/ADR/`.
+
+Until a license is chosen and recorded in an ADR, the following applies:
+
+- The copyright in this work is **all rights reserved** by default. No
+  permission is granted to copy, modify, distribute or sublicense the source
+  in this repository.
+- The dependency licenses of the crates listed in `THIRD_PARTY_NOTICES.md`
+  are unaffected by this statement and remain governed by their own terms.
+- Model weights, fonts, artwork and other bundled assets are licensed
+  separately from the source code and are audited individually; see
+  `docs/RESEARCH.md` and the asset provenance records.
+
+The workspace `Cargo.toml` deliberately uses `license-file = "LICENSE"` instead
+of an SPDX `license` identifier so that no unverified license grant is implied
+by the manifest. When a license is decided it must be:
+
+1. Recorded as an ADR under `docs/ADR/` with the rationale and the reviewed
+   distribution implications (including any dependency-license constraints).
+2. Applied to this file as the full license text.
+3. Reflected in `Cargo.toml` as the matching SPDX `license` identifier.
+4. Reflected in `THIRD_PARTY_NOTICES.md` and in any distributor-facing
+   packaging metadata.
+
+Do not add a license to this repository without that ADR.

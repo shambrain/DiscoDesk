@@ -50,6 +50,49 @@ Build and verify a Windows vertical slice before expanding platform coverage:
 
 Preserve the user's source image. Never write captured PCM to disk by default. Never infer instrument stems from broad FFT bands. Never run image models during playback. Keep capture callbacks bounded and allocation-free. Provide deterministic fallbacks for unsupported APIs, permissions, failed models and GPU loss. Do not claim a platform is supported until tested on that platform.
 
+## Build environment
+
+Verified Windows development baseline (2026-11-27). Full matrix: [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
+
+| Tool | Version | Notes |
+|---|---|---|
+| Rust | `1.100.0` stable, `x86_64-pc-windows-msvc` | Pinned in `rust-toolchain.toml`; `rustfmt` + `clippy` required |
+| MSVC | Build Tools 2019 (14.29) **and** Build Tools 2026 (14.51) | Prefer 2026; the 2019 toolset is below what Tauri/wry expect |
+| Windows SDK | `10.0.19041.0`, `10.0.26100.0` | Use `10.0.26100.0` for the Studio |
+| Node.js | `v26.12.1` (npm `11.20.0`) | Studio build toolchain only; use **npm**, not Bun (see below) |
+| Bun / pnpm | `1.4.4` / `12.16.1` | Not used for the Studio build |
+| WebView2 Runtime | `158.0.4370.33` | Required by the Studio shell |
+| GPU | AMD Radeon RX 6700 XT + Radeon integrated | A Virtual Display Driver adapter is also present |
+
+> **PATH caveat:** Rust is installed at `%USERPROFILE%\.cargo\bin` but is **not** on the
+> default `PATH` on this machine. `scripts/check.ps1` resolves cargo itself; a manual
+> shell needs:
+> ```powershell
+> $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+> ```
+
+> **Bun is not the Studio package manager.** Bun statically links JavaScriptCore/WebKit
+> under LGPL-2. Bun is MIT itself, but a redistributed Bun would carry copyleft
+> obligations. It is fine as a personal dev tool, never as a build or distribution
+> dependency. See `docs/ADR/0004`.
+
+### Reproducible commands
+
+`scripts/check.ps1` is the single source of truth. CI runs the same commands.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/check.ps1
+```
+
+which runs, in order:
+
+```powershell
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo build --workspace
+```
+
 ## OpenCode documentation
 
 - [Agents](https://opencode.ai/docs/agents/)

@@ -1,0 +1,18 @@
+[package]
+name = "dd-diagnostics"
+description = "DiscoDesk local diagnostics: privacy-preserving events and rotating local log sink."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }

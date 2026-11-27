@@ -1,0 +1,76 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/discodesk-engine",
+    "crates/dd-core",
+    "crates/dd-diagnostics",
+    "crates/dd-ipc",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100.0"
+# The project license has NOT been decided yet. `license-file` is used instead of
+# an SPDX `license` identifier so that no unverified license grant is implied
+# by the manifest. See LICENSE and docs/ADR/.
+license-file = "LICENSE"
+repository = "https://github.com/DiscoDesk/DiscoDesk"
+authors = ["DiscoDesk contributors"]
+
+[workspace.dependencies]
+# Shared, pinned dependency versions. Every entry is verified on crates.io and
+# tracked in THIRD_PARTY_NOTICES.md.
+thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
+    "std",
+    "fmt",
+    "registry",
+    "ansi",
+] }
+tracing-appender = { version = "0.2.5", default-features = false }
+clap = { version = "4.6.10", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
+windows = { version = "0.62.2", default-features = false, features = [
+    "std",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
+# Intra-workspace crates.
+dd-core = { path = "crates/dd-core" }
+dd-diagnostics = { path = "crates/dd-diagnostics" }
+dd-ipc = { path = "crates/dd-ipc" }
+
+[workspace.lints.rust]
+# `unsafe_op_in_unsafe_fn` keeps every unsafe block explicit inside unsafe fns.
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+# Pedantic is enabled crate-by-crate; see the per-crate `lints` tables.
+# The following are always on for this workspace.
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+# Deterministic, reviewable release artifacts.
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
