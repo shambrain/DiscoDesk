@@ -14,7 +14,7 @@ DiscoDesk is a Rust Cargo workspace with a planned Tauri Studio. Cargo must rema
 ## Decision
 
 1. Integrate Visual Studio using its **Open Folder** workflow, tracked .vs/tasks.vs.json build tasks and .vs/launch.vs.json debugger configurations.
-2. Provide separate Community and Build Tools .vsconfig files because their C++ workload IDs differ:
+2. Provide separate Community and Build Tools .vsconfig files because their C++ workload IDs differ. Component IDs were checked against Microsoft's current Visual Studio 2026 component directories:
    - Community: Microsoft.VisualStudio.Workload.NativeDesktop.
    - Build Tools: Microsoft.VisualStudio.Workload.VCTools.
 3. Prefer an installed stable Visual Studio 18.x Build Tools instance with MSVC x64/x86 and Windows SDK 10.0.26100 for the reproducible compiler environment. Community 2026 Insiders is the IDE candidate shown in the supplied Installer screenshot, but an Insiders channel is not the stable build baseline.
@@ -45,6 +45,7 @@ DiscoDesk is a Rust Cargo workspace with a planned Tauri Studio. Cargo must rema
 
 - Microsoft Visual Studio Community workload IDs: https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-community
 - Microsoft Visual Studio Build Tools workload IDs: https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-build-tools
+- GitHub Actions Windows 2025 / Visual Studio 2026 runner-label migration: https://github.com/actions/runner-images/issues/14017
 - Microsoft .vsconfig import/export: https://learn.microsoft.com/en-us/visualstudio/install/import-export-installation-configurations
 - Microsoft Open Folder tasks/debugging: https://learn.microsoft.com/en-us/visualstudio/ide/customize-build-and-debug-tasks-in-visual-studio
 - Rust Windows MSVC target: https://doc.rust-lang.org/rustc/platform-support/windows-msvc.html

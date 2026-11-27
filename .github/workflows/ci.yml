@@ -3,14 +3,12 @@ name: CI
 # Gate 0 CI. Every job runs the same commands a developer runs locally
 # (scripts/check.ps1 carries the canonical command list).
 #
-# Runner and action versions are pinned deliberately and were verified on
-# 2026-11-27:
-#   - windows-latest resolves to Windows Server 2025 (build 10.0.26100) with
-#     Windows SDK 10.0.26100.0. `windows-2025` is pinned explicitly so the
-#     image does not drift under us.
-#   - GitHub's windows-2025 image ships Visual Studio 2022 17.14 (and a
-#     separate windows-2025-vs2026 image ships VS 2026 18.12). Both satisfy
-#     the MSVC toolset Rust and Tauri need; the 2019 toolset does not.
+# Runner and action versions were checked on 2026-11-27:
+#   - Pin the explicit windows-2025-vs2026 label for Visual Studio 2026 / MSVC 18.x.
+#   - GitHub migrated windows-2025 and windows-latest to the VS 2026 image in June 2026.
+#     The explicit label protects this workflow from ambiguity during runner transitions.
+#   - Cargo/rust-toolchain.toml remains the Rust build authority; VS/MSVC supplies the
+#     native Windows compiler, linker, SDK and debugger environment.
 #
 # actions/checkout, actions/setup-node, codecov/codecov-action and
 # cargo-deny-action are all at majors newer than the commonly cited v4/v5.
@@ -39,7 +37,7 @@ jobs:
   # ---------------------------------------------------------------- format + lint
   lint:
     name: format and lint (windows)
-    runs-on: windows-2025
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -49,6 +47,10 @@ jobs:
           toolchain: 1.100.0
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
+
+      - name: Verify Visual Studio 2026 MSVC environment
+        shell: pwsh
+        run: ./scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2.9.3
@@ -62,7 +64,7 @@ jobs:
   # ------------------------------------------------------------------- test
   test:
     name: test (windows)
-    runs-on: windows-2025
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -100,7 +102,7 @@ jobs:
   # ------------------------------------------------------------------- build
   build:
     name: build (windows)
-    runs-on: windows-2025
+    runs-on: windows-2025-vs2026
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v7.0.1
@@ -136,7 +138,7 @@ jobs:
   # resolved graph is the one we actually ship.
   audit:
     name: dependency audit
-    runs-on: windows-2025
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v7.0.1
 

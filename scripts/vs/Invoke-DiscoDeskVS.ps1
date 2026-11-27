@@ -55,9 +55,12 @@ function Import-VsEnvironment {
     $script:VsDevCmd = $devCmd
 }
 
-function Get-CommunityIdePath {
+function Get-FullIdePath {
     $vswhere = Get-VsWherePath
-    $paths = @(& $vswhere -all -prerelease -products Microsoft.VisualStudio.Product.Community -property installationPath 2>$null | Where-Object { $_ -and (Test-Path -LiteralPath $_) })
+    $paths = @(
+        & $vswhere -all -prerelease -products '*' -version '[18.0,19.0)' -property installationPath 2>$null |
+            Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    )
     foreach ($path in $paths) {
         $devenv = Join-Path $path 'Common7\IDE\devenv.exe'
         if (Test-Path -LiteralPath $devenv) { return $devenv }
@@ -95,41 +98,81 @@ function Invoke-Cargo {
 function Show-Doctor {
     Write-Host ''
     Write-Host '=== DiscoDesk Visual Studio environment ===' -ForegroundColor Cyan
+
+    $missingRequired = New-Object System.Collections.Generic.List[string]
     $vsPath = Get-StableVs18Path
     $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
     Write-Host ("Selected stable VS 18.x toolchain: {0}" -f $vsPath)
-    if (-not (Test-Path -LiteralPath $devCmd)) { throw "Missing VsDevCmd.bat: $devCmd" }
+    if (-not (Test-Path -LiteralPath $devCmd)) {
+        throw "Missing VsDevCmd.bat: $devCmd"
+    }
+
     Import-VsEnvironment
     Write-Host ("VsDevCmd: {0}" -f $script:VsDevCmd)
 
-    foreach ($tool in @('cl.exe', 'link.exe', 'msbuild.exe', 'cmake.exe')) {
+    foreach ($tool in @('cl.exe', 'link.exe', 'msbuild.exe')) {
         $found = Get-Command $tool -ErrorAction SilentlyContinue
-        if ($found) { Write-Host ("FOUND  {0}: {1}" -f $tool, $found.Source) -ForegroundColor Green }
-        else { Write-Host ("MISSING {0}" -f $tool) -ForegroundColor Yellow }
+        if ($found) {
+            Write-Host ("FOUND  {0}: {1}" -f $tool, $found.Source) -ForegroundColor Green
+        } else {
+            Write-Host ("MISSING REQUIRED TOOL: {0}" -f $tool) -ForegroundColor Red
+            $missingRequired.Add($tool)
+        }
     }
 
-    Write-Host ''
-    Write-Host 'Windows SDK Include versions:'
-    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
-    $sdkInclude = Join-Path $programFilesX86 'Windows Kits\10\Include'
-    if (Test-Path -LiteralPath $sdkInclude) {
-        Get-ChildItem -LiteralPath $sdkInclude -Directory | ForEach-Object { Write-Host ('  ' + $_.Name) }
+    $cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue
+    if ($cmake) {
+        Write-Host ("FOUND  cmake.exe: {0}" -f $cmake.Source) -ForegroundColor Green
     } else {
-        Write-Host '  Windows SDK include directory not found.' -ForegroundColor Yellow
+        Write-Host 'OPTIONAL cmake.exe not found; it is not required by the current Cargo workspace.' -ForegroundColor Yellow
+    }
+
+    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    $sdkRoot = Join-Path $programFilesX86 'Windows Kits\10'
+    $sdkHeader = Join-Path $sdkRoot 'Include\10.0.26100.0\um\Windows.h'
+    $sdkKernelLib = Join-Path $sdkRoot 'Lib\10.0.26100.0\um\x64\kernel32.lib'
+    Write-Host ''
+    Write-Host 'Windows SDK verification:'
+    if ((Test-Path -LiteralPath $sdkHeader) -and (Test-Path -LiteralPath $sdkKernelLib)) {
+        Write-Host 'FOUND Windows SDK 10.0.26100.0 headers and x64 libraries.' -ForegroundColor Green
+    } else {
+        Write-Host 'MISSING required Windows SDK 10.0.26100.0 headers or x64 libraries.' -ForegroundColor Red
+        $missingRequired.Add('Windows SDK 10.0.26100.0')
+        $sdkIncludeRoot = Join-Path $sdkRoot 'Include'
+        if (Test-Path -LiteralPath $sdkIncludeRoot) {
+            Write-Host 'Installed SDK Include versions:'
+            Get-ChildItem -LiteralPath $sdkIncludeRoot -Directory | ForEach-Object {
+                Write-Host ('  ' + $_.Name)
+            }
+        }
     }
 
     Write-Host ''
     $rustc = Get-Command rustc.exe -ErrorAction SilentlyContinue
     $cargo = Get-Command cargo.exe -ErrorAction SilentlyContinue
+
     if ($rustc) {
         Write-Host ('Rust: ' + (& $rustc.Source --version)) -ForegroundColor Green
-        $hostLine = (& $rustc.Source -Vv | Select-String '^host:')
-        if ($hostLine) { Write-Host ('Rust host: ' + $hostLine.ToString().Trim()) }
+        $rustDetails = @(& $rustc.Source -Vv)
+        $hostLine = $rustDetails | Where-Object { $_ -match '^host:' } | Select-Object -First 1
+        if ($hostLine -eq 'host: x86_64-pc-windows-msvc') {
+            Write-Host 'Rust target: x86_64-pc-windows-msvc' -ForegroundColor Green
+        } else {
+            $actualHost = if ($hostLine) { $hostLine } else { 'host triple unavailable' }
+            Write-Host ("WRONG Rust host target: {0}" -f $actualHost) -ForegroundColor Red
+            $missingRequired.Add('Rust host target x86_64-pc-windows-msvc')
+        }
     } else {
-        Write-Host 'Rust compiler not found on PATH.' -ForegroundColor Red
+        Write-Host 'MISSING REQUIRED rustc.exe. Expected rustup-managed tools under %USERPROFILE%\.cargo\bin.' -ForegroundColor Red
+        $missingRequired.Add('rustc.exe')
     }
-    if ($cargo) { Write-Host ('Cargo: ' + (& $cargo.Source --version)) -ForegroundColor Green }
-    else { Write-Host 'Cargo not found on PATH.' -ForegroundColor Red }
+
+    if ($cargo) {
+        Write-Host ('Cargo: ' + (& $cargo.Source --version)) -ForegroundColor Green
+    } else {
+        Write-Host 'MISSING REQUIRED cargo.exe. Expected rustup-managed tools under %USERPROFILE%\.cargo\bin.' -ForegroundColor Red
+        $missingRequired.Add('cargo.exe')
+    }
 
     $webViewKeys = @(
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
@@ -140,19 +183,33 @@ function Show-Doctor {
         $item = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
         if ($item -and $item.pv) { $webView = $item.pv; break }
     }
-    if ($webView) { Write-Host ("WebView2 Runtime: {0}" -f $webView) -ForegroundColor Green }
-    else { Write-Host 'WebView2 Runtime registry entry not found; verify Evergreen Runtime separately.' -ForegroundColor Yellow }
+    if ($webView) {
+        Write-Host ("WebView2 Runtime: {0}" -f $webView) -ForegroundColor Green
+    } else {
+        Write-Host 'WebView2 Runtime registry entry not found; verify Evergreen Runtime before running Tauri Studio.' -ForegroundColor Yellow
+    }
 
-    $ide = Get-CommunityIdePath
-    if ($ide) { Write-Host ("Community IDE: {0}" -f $ide) -ForegroundColor Green }
-    else { Write-Host 'Visual Studio Community IDE executable not found. Build Tools can still compile the workspace.' -ForegroundColor Yellow }
+    $ide = Get-FullIdePath
+    if ($ide) {
+        Write-Host ("Visual Studio IDE: {0}" -f $ide) -ForegroundColor Green
+    } else {
+        Write-Host 'Full Visual Studio IDE not found. Build Tools can still compile the workspace; OpenIDE is unavailable.' -ForegroundColor Yellow
+    }
 
     $engineSource = Join-Path $script:RepoRoot 'apps\discodesk-engine\src\main.rs'
-    if (Test-Path -LiteralPath $engineSource) { Write-Host 'Engine entry point: present' -ForegroundColor Green }
-    else { Write-Host 'Engine entry point: missing in this checkout; Visual Studio launch profiles are staged for the eventual binary.' -ForegroundColor Yellow }
+    if (Test-Path -LiteralPath $engineSource) {
+        Write-Host 'Engine entry point: present' -ForegroundColor Green
+    } else {
+        Write-Host 'Engine entry point: missing in this checkout; build and F5 launch remain unavailable until the real Gate 0 source is committed.' -ForegroundColor Yellow
+    }
+
+    if ($missingRequired.Count -gt 0) {
+        throw ("Visual Studio Doctor failed. Missing or invalid required components: " + ($missingRequired -join ', '))
+    }
 
     Write-Host ''
-    Write-Host 'Doctor completed. Tool discovery is not a successful Cargo build or Studio runtime test.'
+    Write-Host 'Visual Studio Doctor passed: MSVC, linker, MSBuild, SDK 10.0.26100.0 and MSVC Rust toolchain are available.' -ForegroundColor Green
+    Write-Host 'This verifies tool discovery only; it is not a successful Cargo build or Studio runtime test.'
 }
 
 try {
@@ -186,8 +243,8 @@ try {
             Invoke-Cargo -Arguments @('test', '--workspace', '--all-features')
         }
         'OpenIDE' {
-            $ide = Get-CommunityIdePath
-            if (-not $ide) { throw 'Visual Studio Community IDE executable was not found. Build Tools alone do not include devenv.exe.' }
+            $ide = Get-FullIdePath
+            if (-not $ide) { throw 'Full Visual Studio IDE executable was not found. Build Tools alone do not include devenv.exe.' }
             Start-Process -FilePath $ide
             Write-Host 'Visual Studio started. Choose File > Open > Folder and select the DiscoDesk repository root.'
         }

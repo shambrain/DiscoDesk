@@ -191,6 +191,7 @@ Inspect the actual development environment before selecting versions:
 - Windows edition/build and shell version.
 - Rust stable toolchain and target triple.
 - MSVC/Visual Studio Build Tools and Windows SDK.
+- The Windows CI image is pinned to GitHub Actions `windows-2025-vs2026`; the lint job runs the repository Visual Studio Doctor before Cargo checks.
 - Visual Studio Community/Build Tools product channel, vswhere instance, C++ workload, MSVC x64/x86, linker, MSBuild, CMake and installed Windows SDK components.
 - Visual Studio Open Folder support, .vsconfig reproducibility, Cargo task integration, debugger launch profiles and symbol-preserving profile.
 - GPU adapter, driver and available D3D12/Vulkan backends.

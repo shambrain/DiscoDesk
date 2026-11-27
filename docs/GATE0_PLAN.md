@@ -155,8 +155,8 @@ a read-only mirror of engine state and re-reads it on every reconnect (`ADR-0001
 | Directive §9 requirement | How it is proven |
 |---|---|
 | Check/build/test on the actual Windows target | `scripts/check.ps1`: fmt, clippy `-D warnings`, test, build — all on `x86_64-pc-windows-msvc` with 1.100.0 |
-| Visual Studio integration | `scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor` locates stable VS 18.x, imports VsDevCmd, reports MSVC/SDK/Rust/WebView2 and preserves the pinned Rust toolchain |
-| CI reproduces the same commands | `.github/workflows/ci.yml` runs the same command list on `windows-2025` |
+| Visual Studio integration | `scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor` fails unless MSVC, linker, MSBuild, SDK 10.0.26100.0 and the `x86_64-pc-windows-msvc` Rust host are available |
+| CI reproduces the same commands | `.github/workflows/ci.yml` runs the same command list on `windows-2025-vs2026` |
 | Engine and Studio are separate processes | Two distinct binaries; an integration test drives the engine over a real pipe and asserts the Studio-side client fails cleanly when the engine is killed |
 | IPC ownership documented | `ADR-0002`, `docs/IPC_PROTOCOL.md` |
 | IPC versioning documented | Protocol version in every frame; a mismatch returns a typed error and closes the connection |
@@ -218,7 +218,7 @@ undecided rather than inventing a grant.
 Gate 0 is complete when, and only when:
 
 1. `scripts/check.ps1` passes on the Windows target, with the real counts recorded.
-2. CI is green on `windows-2025` for the same commit.
+2. CI is green on `windows-2025-vs2026` for the same commit.
 3. The engine and the Studio are demonstrably separate processes.
 4. The IPC contract, its versioning, its permissions and its error behaviour are
    documented and covered by tests.

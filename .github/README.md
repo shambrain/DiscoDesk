@@ -47,3 +47,6 @@ The Windows repository also includes Visual Studio Open Folder tasks and debug p
 - [Environment Doctor](../scripts/vs/Invoke-DiscoDeskVS.ps1)
 
 CI remains the automated acceptance authority. The local Visual Studio debugger is used for native inspection and profiling on the developer's Windows machine.
+
+
+CI uses the explicit `windows-2025-vs2026` runner label to exercise the Windows Server 2025 / Visual Studio 2026 image. The lint job runs the Visual Studio Doctor to verify MSVC, linker, MSBuild, SDK 10.0.26100.0 and the MSVC Rust host before linting.

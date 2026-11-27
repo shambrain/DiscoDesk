@@ -198,3 +198,10 @@ Community 2026 Insiders is treated as an IDE candidate, not the release compiler
 At public main commit 2912a7e5b356301121c2956b301fc56dd364b23d, apps/discodesk-engine/Cargo.toml declares src/main.rs as the binary path, but apps/discodesk-engine/src/main.rs is absent from the public tree. The VS build helper checks for the real source and stops with an explicit message rather than fabricating a program. The F5 launch profiles are prepared for the eventual executable, but engine build/debug acceptance remains pending until the real entry point is committed and builds successfully.
 
 The user may have uncommitted local engine files not present in public main; check the local checkout before drawing conclusions about local work.
+
+
+### 8.4 GitHub Actions runner baseline
+
+The CI workflow now uses the explicit `windows-2025-vs2026` runner label. GitHub's runner-images announcement states the `windows-2025` and `windows-latest` labels migrated to Visual Studio 2026 in June 2026; the explicit label pins the intended Visual Studio 2026 image. The lint job runs the same repository Visual Studio Doctor to require the MSVC compiler, linker, MSBuild, Windows SDK 10.0.26100.0, and Rust MSVC host before Cargo linting.
+
+Source: https://github.com/actions/runner-images/issues/14017

@@ -37,7 +37,7 @@ Two configurations are provided because Visual Studio Community and Build Tools 
 - Root .vsconfig: Community 2026 / Community 2026 Insiders. Workload Microsoft.VisualStudio.Workload.NativeDesktop.
 - vsconfig/BuildTools-2026.vsconfig: Build Tools 2026. Workload Microsoft.VisualStudio.Workload.VCTools.
 
-Both request the MSVC x64/x86 toolchain, Windows 11 SDK 10.0.26100 and CMake integration. The Community configuration also includes the Windows Performance Toolkit and C++ Build Insights.
+Both request documented MSVC x64/x86, Windows SDK 10.0.26100 and CMake components. The Community configuration additionally requests the documented Windows Performance Toolkit and C++ Diagnostic Tools. The Build Tools manifest omits the Windows Performance Toolkit component because it is not listed in Microsoft's current Build Tools component catalogue; install Windows ADK/Windows Performance Toolkit separately when ETW tooling is required.
 
 To import a configuration: open Visual Studio Installer, choose **More > Import configuration**, select the corresponding file, review the selected components, and apply. Review the Installer's changes before accepting; the configuration files do not silently update products.
 
@@ -109,3 +109,8 @@ Add -Push only when you explicitly want the helper to publish the commit to orig
 - Rust Windows MSVC target: https://doc.rust-lang.org/rustc/platform-support/windows-msvc.html
 - Rust debug information options: https://doc.rust-lang.org/rustc/codegen-options/index.html#debuginfo
 - Tauri Windows prerequisites: https://tauri.app/start/prerequisites/
+
+
+### GitHub Actions Visual Studio verification
+
+The Windows jobs use `windows-2025-vs2026`, which GitHub documents as the explicit Windows Server 2025 image with Visual Studio 2026. The lint job runs the same Visual Studio Doctor. This verifies the compiler, linker, MSBuild, pinned Windows SDK and Rust MSVC host in CI before the Cargo checks.
