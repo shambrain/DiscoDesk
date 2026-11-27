@@ -107,6 +107,16 @@ The checked-in .vs/tasks.vs.json exposes:
 - Optimized Build with Symbols
 - Workspace Tests
 - Developer PowerShell
+- **Build Studio (frontend + debug)**
+- **Build Studio (optimized + symbols)**
+- **Probe Studio to engine**
+- **Studio launch smoke (real window + engine survival)**
+
+The Studio tasks exist because the Studio crate cannot compile until its frontend is
+built: `tauri-build` embeds `frontendDist` at compile time. `-Action BuildStudio` runs
+`npm ci` (when `node_modules` is absent) and `npm run build` before invoking cargo, which
+is the same ordering `scripts/check.ps1` and CI use. `-Action ProbeStudio` runs the built
+binary's `--probe` against a **running** engine; it does not start the engine.
 
 Open the repository folder in Visual Studio. Use the Solution Explorer context menu's configured tasks or the Build menu entries. Task output appears in the Visual Studio Output window; errors are surfaced by the custom task integration.
 
@@ -115,6 +125,13 @@ Open the repository folder in Visual Studio. Use the Solution Explorer context m
 The checked-in .vs/launch.vs.json provides:
 - DiscoDesk Engine (Debug) -> target/debug/discodesk-engine.exe
 - DiscoDesk Engine (Optimized + Symbols) -> target/release-with-symbols/discodesk-engine.exe
+- **DiscoDesk Studio (Debug) -> target/debug/discodesk-studio.exe**
+- **DiscoDesk Studio (Optimized + Symbols) -> target/release-with-symbols/discodesk-studio.exe**
+
+Debugging the Studio requires a running engine if you want the connected state; launch the
+engine profile first, then the Studio profile. The reverse order is also valid and is what
+proves independence: the Studio starts, shows "Engine not running", and switches to
+"Engine connected" on its next poll once the engine appears.
 
 ### 6.1 Current debug readiness (verified 2026-11-27)
 
@@ -131,6 +148,10 @@ Both profiles build and emit symbols:
 | `target/debug/discodesk_engine.pdb` | 39,563,264 B |
 | `target/release-with-symbols/discodesk-engine.exe` | 1,370,624 B |
 | `target/release-with-symbols/discodesk_engine.pdb` | 20,631,552 B |
+| `target/debug/discodesk-studio.exe` | 12,758,528 B |
+| `target/debug/discodesk_studio.pdb` | 111,489,024 B |
+| `target/release-with-symbols/discodesk-studio.exe` | 4,535,296 B |
+| `target/release-with-symbols/discodesk_studio.pdb` | 66,236,416 B |
 
 > **PDB naming:** Rust names the PDB after the **underscored** crate name
 > (`discodesk_engine.pdb`), not after the binary (`discodesk-engine.exe`). A check for

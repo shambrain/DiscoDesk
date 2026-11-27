@@ -19,7 +19,11 @@
 [CmdletBinding()]
 param(
     [ValidateSet('debug', 'release-with-symbols', 'release')]
-    [string]$Configuration = 'debug'
+    [string]$Configuration = 'debug',
+
+    # Skips the Studio/engine boundary check. Intended for debugging the engine
+    # alone; the canonical run must include it.
+    [switch]$SkipStudio
 )
 
 $ErrorActionPreference = 'Stop'
@@ -122,6 +126,36 @@ try {
     }
     $null = $proc.StandardOutput.ReadLine()   # protocol/state line
     Write-Host "  ok   engine reported readiness ($readyLine)" -ForegroundColor Green
+
+    # 4b. Studio/engine boundary, using the real Studio binary.
+    #
+    # This runs before the script opens its own pipe because the engine serves
+    # one connection at a time: a second client would block until the first
+    # disconnects. Running the probe first also proves the engine's accept loop
+    # recovers after a client disconnects.
+    if (-not $SkipStudio) {
+        $studio = Join-Path $repoRoot "target\$Configuration\discodesk-studio.exe"
+        if (-not (Test-Path -LiteralPath $studio)) {
+            $failures.Add("the Studio binary is missing at $studio; build it with 'npx tauri build' or include the studio crate in the workspace build")
+            Write-Host "  FAIL Studio binary missing: $studio" -ForegroundColor Red
+        } else {
+            $probeOutput = & $studio --probe --endpoint $endpoint 2>&1
+            $probeExit = $LASTEXITCODE
+            $probeText = ($probeOutput | Out-String)
+            Assert-Equal -Actual $probeExit -Expected 0 -What 'Studio --probe exit code'
+
+            $probe = $null
+            try { $probe = $probeText | ConvertFrom-Json } catch { }
+            if ($null -eq $probe) {
+                $failures.Add("Studio --probe did not print JSON: $probeText")
+                Write-Host "  FAIL Studio --probe output was not JSON" -ForegroundColor Red
+            } else {
+                Assert-Equal -Actual $probe.kind -Expected 'connected' -What 'Studio reports the engine as connected'
+                Assert-Equal -Actual $probe.status.state -Expected 'IdleReady' -What 'Studio reads the engine state'
+                Assert-Equal -Actual $probe.status.protocolVersion -Expected 1 -What 'Studio and engine agree on the protocol'
+            }
+        }
+    }
 
     # 5. Connect over the real named pipe.
     #    NamedPipeClientStream takes the pipe NAME, not the full `\\.\pipe\...`

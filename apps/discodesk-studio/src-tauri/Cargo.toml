@@ -1,0 +1,31 @@
+[package]
+name = "discodesk-studio"
+description = "DiscoDesk Studio: the on-demand Tauri control UI. Never the wallpaper renderer."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "discodesk_studio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "discodesk-studio"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dd-ipc = { workspace = true }

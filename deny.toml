@@ -18,6 +18,22 @@
 all-features = true
 no-default-features = false
 
+# Audit only the targets this project actually ships.
+#
+# Without this, cargo-deny evaluates the whole cross-platform graph, which
+# includes Tauri's Linux GTK/WebKit stack (`glib`, `gtk`, `webkit2gtk`, ...)
+# that is never compiled on Windows. Auditing crates we never link produces
+# findings we cannot act on and hides the ones we can.
+#
+# This is a scoping decision, not a weakening one: `docs/ADR/0003` makes Windows
+# the only supported target today, and `docs/PLATFORM_SUPPORT.md` records that
+# macOS and Linux are unimplemented. When Gates 7 and 8 add those platforms,
+# their triples MUST be added here in the same change as the adapter, so their
+# dependencies are audited before they ship.
+targets = [
+    "x86_64-pc-windows-msvc",
+]
+
 [output]
 feature-depth = 1
 
@@ -29,9 +45,17 @@ feature-depth = 1
 # `0BSD` is required because several crates are published as
 # `0BSD OR Apache-2.0` and cargo-deny evaluates each alternative.
 #
-# `MPL-2.0` is weak, file-level copyleft: it is allowed, and any MPL file
-# linked into a shipped binary must be disclosed in THIRD_PARTY_NOTICES.md and
-# its modifications published. No MPL crate is in the current graph.
+# `MPL-2.0` is weak, file-level copyleft and IS present in the graph through the
+# Tauri HTML/CSS stack: `cssparser`, `cssparser-macros`, `selectors`,
+# `dtoa-short` and `option-ext` are MPL-2.0 (not dual-licensed).
+#
+# Obligations, all of which this project satisfies:
+#   * The source of the MPL files is publicly available at the published crate
+#     versions, and is not modified here.
+#   * The licence and its notices are disclosed (THIRD_PARTY_NOTICES.md).
+#   * No additional restrictions are placed on those files.
+# If any MPL-covered file is ever patched, the modification MUST be published and
+# recorded here. See docs/ADR/0012.
 #
 # The GNU licenses are matched pedantically by cargo-deny (0.18.4+): a crate
 # declaring `GPL-3.0` does not match `GPL-3.0-only`. None are allowed here.
@@ -43,6 +67,11 @@ allow = [
     "BSD-3-Clause",
     "0BSD",
     "ISC",
+    # `Zlib` is a permissive, OSI-approved, GPL-compatible licence with no
+    # copyleft obligation. It is required by `foldhash` (via `hashbrown`), a
+    # Windows-relevant dependency of the Tauri stack. Accepting it is a policy
+    # decision, recorded here rather than in a waiver.
+    "Zlib",
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "MPL-2.0",

@@ -16,7 +16,23 @@ DiscoDesk is a planned local-first, cross-platform audio-reactive wallpaper engi
 
 ## Repository status
 
-**Research and implementation blueprint. The wallpaper engine is not implemented yet.** No CPU, GPU, memory, compatibility or model-accuracy targets are certified until they are measured on supported hardware.
+**Gate 0 engineering is complete; the Windows MVP is not.** What exists today:
+
+- A Rust workspace with a versioned local IPC contract, an engine state machine, and
+  privacy-preserving diagnostics, all unit- and integration-tested.
+- A background **engine** process and a separate **Tauri v2 Studio** process that talk over
+  a current-user-only Windows named pipe.
+- Two executable smoke tests that drive the real binaries, including "close the Studio and
+  the engine keeps running".
+- CI covering frontend, format, lint, tests, release build, Tauri build, both smoke tests
+  and the dependency licence/advisory gate.
+
+**Not implemented:** audio capture, DSP, the wgpu renderer, image analysis, the Windows
+wallpaper host, and everything in M2/M3. No CPU, GPU, memory, compatibility or
+model-accuracy target is certified until it is measured on supported hardware.
+
+Status detail and evidence: [docs/IMPLEMENTATION_STATE.md](docs/IMPLEMENTATION_STATE.md).
+Current gate plan: [docs/GATE0_PLAN.md](docs/GATE0_PLAN.md).
 
 ## Start with OpenCode
 
@@ -57,7 +73,7 @@ Verified Windows development baseline (2026-11-27). Full matrix: [docs/PLATFORM_
 | Tool | Version | Notes |
 |---|---|---|
 | Rust | `1.100.0` stable, `x86_64-pc-windows-msvc` | Pinned in `rust-toolchain.toml`; `rustfmt` + `clippy` required |
-| MSVC | Build Tools 2019 (14.29) **and** Build Tools 2026 (14.51) | Prefer 2026; the 2019 toolset is below what Tauri/wry expect |
+| MSVC | Build Tools 2019 (14.29) **and** Build Tools 2026 `18.12.1`, MSVC `14.52.37025` | Prefer 2026; the 2019 toolset is below what Tauri/wry expect |
 | Windows SDK | `10.0.19041.0`, `10.0.26100.0` | Use `10.0.26100.0` for the Studio |
 | Node.js | `v26.12.1` (npm `11.20.0`) | Studio build toolchain only; use **npm**, not Bun (see below) |
 | Bun / pnpm | `1.4.4` / `12.16.1` | Not used for the Studio build |
@@ -84,13 +100,54 @@ Verified Windows development baseline (2026-11-27). Full matrix: [docs/PLATFORM_
 powershell -ExecutionPolicy Bypass -File scripts/check.ps1
 ```
 
-which runs, in order:
+which runs, in order (the frontend must be built first: `tauri-build` embeds it at compile
+time):
 
 ```powershell
+# apps/discodesk-studio
+npm ci
+npm run typecheck
+npm test
+npm run build
+
+# repository root
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo build --workspace
+powershell -File scripts/ipc-smoke.ps1
+powershell -File scripts/studio-smoke.ps1
+cargo deny check all
+```
+
+`cargo-deny` is required for the licence/advisory gate. If it is absent the script prints a
+loud SKIP, because a skip is not a pass:
+
+```powershell
+cargo install cargo-deny --locked --version 0.22.1
+```
+
+### Run it
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+
+# 1. Start the engine in one shell. It prints the endpoint it is listening on.
+cargo run -p discodesk-engine
+
+# 2. Start the Studio in another. It finds the engine on its own.
+cd apps/discodesk-studio
+npx tauri dev
+```
+
+The Studio is just a dev convenience in that second command; the built executable is
+`target/release/discodesk-studio.exe`. Closing the Studio leaves the engine running — that
+is verified by `scripts/studio-smoke.ps1`, not just asserted here.
+
+Ask a single question without opening a window:
+
+```powershell
+target\release\discodesk-studio.exe --probe
 ```
 
 ## Visual Studio 2026 development

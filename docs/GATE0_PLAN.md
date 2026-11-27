@@ -1,7 +1,7 @@
 # Gate 0 implementation plan — repository and environment baseline
 
-**Status:** Scaffold, engine, IPC and CI implemented and verified on Windows. The Studio
-scaffold is **not** implemented, so one Gate 0 acceptance item is still open.
+**Status:** Scaffold, engine, IPC, diagnostics, Studio and CI are implemented and verified
+locally. Gate 0 stays open until the GitHub Actions pipeline completes green.
 **Evidence:** `docs/IMPLEMENTATION_STATE.md` §3.
 **Authority:** `OPENCODE_MASTER_DIRECTIVE.md` §9 defines Gate 0. `AGENTS.md` binds every
 decision here. `ARCHITECTURE.md` §4, §5, §11 and §16 define the contracts.
@@ -22,7 +22,7 @@ Measured, not assumed. Full table with the exact probe command per row:
 | OS | Windows 10 build 19045, x64 |
 | Rust | stable **1.100.0**, `x86_64-pc-windows-msvc`, `rustfmt` + `clippy` |
 | MSVC | Build Tools 2019 (14.29) **and** 2026 (14.51) |
-| Visual Studio IDE | Community 2026 Insiders listed in Installer; update pending at 0% in screenshot |
+| Visual Studio IDE | Community 2026 Insiders `18.13.0-insiders+12412.241` installed at `C:\Program Files\Microsoft Visual Studio\18\Insiders` |
 | Windows SDK | 10.0.19041.0 and 10.0.26100.0 |
 | Node / npm | 26.12.1 / 11.20.0 |
 | WebView2 Runtime | 158.0.4370.33 |
@@ -59,7 +59,11 @@ Two environment facts shape the plan:
 
 Visual Studio is integrated as an IDE/native-debugging environment, not as a second build system. Cargo remains authoritative. Use Open Folder, tracked .vs task/launch JSON, root Community .vsconfig and separate Build Tools .vsconfig. No generated C++ project or duplicate MSBuild graph is allowed. See [VISUAL_STUDIO_WORKFLOW.md](VISUAL_STUDIO_WORKFLOW.md) and ADR-0010.
 
-The public main snapshot checked for this plan lacks apps/discodesk-engine/src/main.rs even though its binary manifest declares that path. The Visual Studio helper must fail clearly until the real entry point is committed; do not create a fake entry point to satisfy F5.
+`apps/discodesk-engine/src/main.rs` and `apps/discodesk-studio/src-tauri/src/main.rs` now
+exist, so `-Action BuildDebug`, `-Action BuildSymbols`, `-Action BuildStudio` and
+`-Action BuildStudioSymbols` all build. The helper still refuses to fabricate a missing
+entry point if one is ever removed. `-Action BuildStudio` builds the frontend first,
+because `tauri-build` embeds it at compile time.
 
 ### 2.2 Explicitly out of scope
 
@@ -158,7 +162,7 @@ a read-only mirror of engine state and re-reads it on every reconnect (`ADR-0001
 | Check/build/test on the actual Windows target | `scripts/check.ps1`: fmt, clippy `-D warnings`, test, build — all on `x86_64-pc-windows-msvc` with 1.100.0 |
 | Visual Studio integration | `scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor` fails unless MSVC, linker, MSBuild, SDK 10.0.26100.0 and the `x86_64-pc-windows-msvc` Rust host are available |
 | CI reproduces the same commands | `.github/workflows/ci.yml` runs the same command list on `windows-2025-vs2026` |
-| Engine and Studio are separate processes | Two distinct binaries; an integration test drives the engine over a real pipe and asserts the Studio-side client fails cleanly when the engine is killed |
+| Engine and Studio are separate processes | Two distinct binaries. `scripts/ipc-smoke.ps1` starts the engine and runs the Studio's `--probe` against it; `scripts/studio-smoke.ps1` launches the real GUI, closes it, and asserts the engine is still running and still answering |
 | IPC ownership documented | `ADR-0002`, `docs/IPC_PROTOCOL.md` |
 | IPC versioning documented | Protocol version in every frame; a mismatch returns a typed error and closes the connection |
 | IPC permissions documented | Protected DACL on Windows; `0600` on Unix; a test reads the descriptor back and asserts no `Everyone`/`Users`/`Anonymous` ACE |
@@ -180,19 +184,31 @@ Canonical, run locally and in CI:
 powershell -ExecutionPolicy Bypass -File scripts/check.ps1
 ```
 
-which is exactly:
+which runs, in this order (the frontend must come first: `tauri-build` embeds it at
+compile time):
 
 ```powershell
+# in apps/discodesk-studio
+npm ci
+npm run typecheck
+npm test
+npm run build
+
+# from the repository root
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo build --workspace
 powershell -File scripts/ipc-smoke.ps1
+powershell -File scripts/studio-smoke.ps1
+cargo deny check all
 ```
 
-The last step starts the real engine binary and drives the real named pipe. It exists
-because unit tests cannot prove that the process actually serves the protocol; it caught
-two engine defects that compiled cleanly.
+The two smoke scripts are not decoration. `ipc-smoke.ps1` starts the real engine and runs
+the real Studio's `--probe` against it; `studio-smoke.ps1` launches the actual GUI, closes
+it, and asserts the engine survives. Between them they caught nine defects that compiled
+cleanly and were invisible to unit tests — including two engine bugs and the duplicated
+endpoint derivation that would have made the Studio permanently unable to find the engine.
 
 Through the Visual Studio environment instead (same commands, MSVC initialised):
 
@@ -216,7 +232,7 @@ check passed (`ADR/0004`).
 | # | Decision | Owner | Effect if unresolved |
 |---|---|---|---|
 | D1 | **Project licence** (MIT vs Apache-2.0) | product owner | `LICENSE` stays "not decided"; no licence claim in any file |
-| D2 | Studio UI framework details (vite/TS version pin) | tauri-ui-engineer | Studio skeleton uses the template defaults; pin recorded when a build passes |
+| D2 | Studio UI framework details (vite/TS version pin) | tauri-ui-engineer | **Resolved:** Vite 8.4.0, React 19.3.1, TypeScript 5.9.3 (not 7.x), all pinned exactly and recorded in `RESEARCH.md` §16.3 and `docs/ADR/0008` |
 | D3 | Whether `dd-errors` is a crate or a module | systems-architect / rust-engineer | Cosmetic; the numeric codes must have one source of truth either way |
 
 D1 is the only one that blocks a *claim*. It does not block the build, the tests or the

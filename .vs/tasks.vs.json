@@ -1,112 +1,172 @@
 {
-  "version": "0.2.1",
-  "tasks": [
-    {
-      "taskName": "DiscoDesk: Visual Studio environment doctor",
-      "appliesTo": "*",
-      "type": "default",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "Doctor"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Check (format, lint, test, build)",
-      "appliesTo": "*",
-      "type": "default",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "Check"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Build Debug",
-      "appliesTo": "*",
-      "type": "default",
-      "contextType": "build",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "BuildDebug"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Rebuild Debug",
-      "appliesTo": "*",
-      "type": "default",
-      "contextType": "rebuild",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "RebuildDebug"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Build Optimized with Symbols",
-      "appliesTo": "*",
-      "type": "default",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "BuildSymbols"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Test Workspace",
-      "appliesTo": "*",
-      "type": "default",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "Test"
-      ]
-    },
-    {
-      "taskName": "DiscoDesk: Open Developer PowerShell",
-      "appliesTo": "*",
-      "type": "default",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
-        "-Action",
-        "DeveloperShell"
-      ]
-    }
-  ]
+    "version":  "0.2.1",
+    "tasks":  [
+                  {
+                      "taskName":  "DiscoDesk: Visual Studio environment doctor",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "Doctor"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Check (format, lint, test, build)",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "Check"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Build Debug",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "contextType":  "build",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "BuildDebug"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Rebuild Debug",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "contextType":  "rebuild",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "RebuildDebug"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Build Optimized with Symbols",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "BuildSymbols"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Test Workspace",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "Test"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Open Developer PowerShell",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "DeveloperShell"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Build Studio (frontend + debug)",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "BuildStudio"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Build Studio (optimized + symbols)",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "BuildStudioSymbols"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Probe Studio to engine",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\vs\\Invoke-DiscoDeskVS.ps1",
+                                   "-Action",
+                                   "ProbeStudio"
+                               ]
+                  },
+                  {
+                      "taskName":  "DiscoDesk: Studio launch smoke (real window + engine survival)",
+                      "appliesTo":  "*",
+                      "type":  "default",
+                      "command":  "powershell.exe",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceRoot}\\scripts\\studio-smoke.ps1",
+                                   "-Configuration",
+                                   "debug"
+                               ]
+                  }
+              ]
 }

@@ -30,11 +30,13 @@
 // its pointer, lifetime, ownership and thread invariants.
 #![warn(missing_docs)]
 
+pub mod endpoint;
 pub mod error;
 pub mod frame;
 pub mod protocol;
 pub mod transport;
 
+pub use endpoint::{ENDPOINT_STEM, default_endpoint_path};
 pub use error::{ErrorCode, IpcError, IpcResult};
 pub use frame::{Frame, MAX_FRAME_BYTES};
 pub use protocol::{

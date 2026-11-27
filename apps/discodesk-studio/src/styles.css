@@ -1,0 +1,204 @@
+:root {
+  /* A calm, neutral surface. No wallpaper-derived colour is used for text. */
+  --surface: #f7f7f8;
+  --surface-raised: #ffffff;
+  --border: #e2e2e6;
+  --text: #1b1b1f;
+  --text-muted: #5c5c66;
+  --accent: #3b6ea5;
+  --ok: #2f6b45;
+  --warn: #8a5a00;
+  --error: #9b2c2c;
+  --radius: 10px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Cascadia Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #17171b;
+    --surface-raised: #1f1f25;
+    --border: #31313a;
+    --text: #f2f2f5;
+    --text-muted: #a5a5b0;
+    --accent: #7aa7d8;
+    --ok: #7fcaa1;
+    --warn: #e0b163;
+    --error: #f08c8c;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.studio {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.studio__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.studio__subtitle {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.status {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.status__headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.status__label {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.status__explanation {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+}
+
+.status__detail {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* State is conveyed by the label text and the glyph; colour is secondary. */
+.status[data-kind='connected'] .status__glyph {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.status[data-kind='unavailable'] .status__glyph {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.status[data-kind='protocolMismatch'] .status__glyph,
+.status[data-kind='engineError'] .status__glyph,
+.status[data-kind='connectionFailed'] .status__glyph,
+.status[data-kind='permissionDenied'] .status__glyph {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 8px 20px;
+}
+
+.details__list {
+  margin: 0;
+  padding: 0;
+}
+
+.details__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.details__row:last-child {
+  border-bottom: none;
+}
+
+.details__row dt {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.details__row dd {
+  margin: 0;
+  font-size: 0.875rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.8rem !important;
+}
+
+.studio__footer {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.studio__footer p {
+  margin: 0;
+}
+
+/* Respect a reduced-motion preference; this UI has no decorative animation,
+   but the rule documents the intent and covers future additions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

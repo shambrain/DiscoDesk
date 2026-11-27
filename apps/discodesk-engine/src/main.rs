@@ -44,9 +44,6 @@ use dd_ipc::protocol::{
 use dd_ipc::transport::{Listener, Transport};
 use serde_json::json;
 
-/// Default named-pipe / socket stem.
-const ENDPOINT_STEM: &str = "discodesk-engine";
-
 #[derive(Debug, Parser)]
 #[command(
     name = "discodesk-engine",
@@ -150,39 +147,11 @@ fn run(cli: &Cli) -> Result<ExitCode, String> {
 
 /// The default endpoint for the current user.
 ///
-/// The name embeds a sanitised user name so that two accounts on one machine do
-/// not fight over a single endpoint. Security does not depend on this: the
-/// Windows pipe carries a current-user-only security descriptor regardless of
-/// its name.
+/// Delegated to `dd_ipc` so the Studio computes exactly the same name. Two
+/// independent derivations would let the two processes open different pipes
+/// while both appearing correct.
 fn default_endpoint() -> String {
-    let user = std::env::var("USERNAME")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "default".to_owned());
-    let sanitised: String = user
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .take(32)
-        .collect();
-    let stem = if sanitised.is_empty() {
-        "default".to_owned()
-    } else {
-        sanitised
-    };
-
-    #[cfg(windows)]
-    {
-        format!(r"\\.\pipe\{ENDPOINT_STEM}-{stem}")
-    }
-    #[cfg(unix)]
-    {
-        let dir = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
-        format!("{dir}/{ENDPOINT_STEM}-{stem}.sock")
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        format!("{ENDPOINT_STEM}-{stem}")
-    }
+    dd_ipc::default_endpoint_path()
 }
 
 /// Accepts and serves connections until a client requests shutdown.
@@ -460,7 +429,7 @@ mod tests {
     fn default_endpoint_is_non_empty_and_local() {
         let endpoint = default_endpoint();
         assert!(!endpoint.is_empty());
-        assert!(endpoint.contains(ENDPOINT_STEM));
+        assert!(endpoint.contains(dd_ipc::ENDPOINT_STEM));
         #[cfg(windows)]
         assert!(endpoint.starts_with(r"\\.\pipe\"));
     }

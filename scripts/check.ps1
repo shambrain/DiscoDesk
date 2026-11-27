@@ -11,7 +11,13 @@
 param(
     [switch]$Release,
     [switch]$SkipDeferredGuard,
-    [switch]$SkipSmoke
+    [switch]$SkipSmoke,
+    # Skips the GUI launch test. It needs an interactive desktop session; CI
+    # provides one, a headless agent context may not.
+    [switch]$SkipStudioLaunch,
+    # Skips the Studio frontend build. Only for engine-only debugging: the
+    # studio crate cannot compile without it.
+    [switch]$SkipFrontend
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,8 +57,7 @@ Write-Host "rustc: $((& rustc --version 2>&1))"
 # ---------------------------------------------------------------------------
 if (-not $SkipDeferredGuard) {
     Write-Section 'Gate 0 deferred-crate guard'
-    $deferred = @(
-        'crates/dd-audio',
+    $deferred = @(        'crates/dd-audio',
         'crates/dd-dsp',
         'crates/dd-analysis',
         'crates/dd-renderer',
@@ -87,6 +92,47 @@ if (-not $SkipDeferredGuard) {
         Write-Host 'ok: no unbounded channels'
     }
 }
+
+# ---------------------------------------------------------------------------
+# The Studio frontend must be built before any cargo command that touches the
+# studio crate: `tauri-build` embeds `frontendDist` at compile time and fails if
+# it is missing. This runs first so a fresh checkout behaves like CI.
+# ---------------------------------------------------------------------------
+if (-not $SkipFrontend) {
+    Write-Section 'Studio frontend (typecheck, tests, production build)'
+    $studioDir = Join-Path $PSScriptRoot '..\apps\discodesk-studio'
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+
+    if (-not $npm) {
+        Write-Host 'FAIL: npm was not found; the Studio frontend cannot be built.' -ForegroundColor Red
+        $failed += 'frontend (npm missing)'
+    } elseif (-not (Test-Path $studioDir)) {
+        Write-Host "FAIL: Studio directory missing at $studioDir" -ForegroundColor Red
+        $failed += 'frontend (missing directory)'
+    } else {
+        Push-Location $studioDir
+        try {
+            if (-not (Test-Path 'node_modules')) {
+                & $npm.Source ci --no-audit --no-fund
+                if ($LASTEXITCODE -ne 0) { $failed += 'frontend npm ci' }
+            }
+            if ($failed -notcontains 'frontend npm ci') {
+                & $npm.Source run typecheck
+                if ($LASTEXITCODE -ne 0) { $failed += 'frontend typecheck' }
+
+                & $npm.Source test
+                if ($LASTEXITCODE -ne 0) { $failed += 'frontend tests' }
+
+                & $npm.Source run build
+                if ($LASTEXITCODE -ne 0) { $failed += 'frontend build' }
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
 
 # ---------------------------------------------------------------------------
 # The four canonical commands. Order matches .github/workflows/ci.yml.
@@ -127,6 +173,24 @@ if (-not $SkipSmoke) {
         $configuration = if ($Release) { 'release' } else { 'debug' }
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smoke -Configuration $configuration
         if ($LASTEXITCODE -ne 0) { $failed += 'ipc smoke' }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Application launch: real window, real lifecycle. Unit tests cannot show that
+# closing the Studio leaves the engine running, which is a product invariant
+# (docs/ADR/0001).
+# ---------------------------------------------------------------------------
+if (-not $SkipStudioLaunch) {
+    Write-Section 'Studio launch smoke (real window, engine survives Studio close)'
+    $studioSmoke = Join-Path $PSScriptRoot 'studio-smoke.ps1'
+    if (-not (Test-Path $studioSmoke)) {
+        Write-Host 'FAIL: scripts/studio-smoke.ps1 is missing' -ForegroundColor Red
+        $failed += 'studio launch smoke (missing script)'
+    } else {
+        $configuration = if ($Release) { 'release' } else { 'debug' }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $studioSmoke -Configuration $configuration
+        if ($LASTEXITCODE -ne 0) { $failed += 'studio launch smoke' }
     }
 }
 

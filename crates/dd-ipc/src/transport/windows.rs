@@ -48,8 +48,8 @@ use windows::Win32::Security::Authorization::{
     SE_FILE_OBJECT,
 };
 use windows::Win32::Security::{
-    DACL_SECURITY_INFORMATION, GetTokenInformation, OBJECT_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    DACL_SECURITY_INFORMATION, GetTokenInformation, PSECURITY_DESCRIPTOR, PSID,
+    SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
 };
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_MODE,
@@ -516,6 +516,37 @@ fn open_pipe(path: &str) -> IpcResult<OwnedHandle> {
     })
 }
 
+/// Windows error code for `ERROR_BROKEN_PIPE`.
+const ERROR_BROKEN_PIPE: u32 = 109;
+/// Windows error code for `ERROR_PIPE_NOT_CONNECTED`.
+const ERROR_PIPE_NOT_CONNECTED: u32 = 233;
+
+/// Extracts the Win32 error code from a `windows_core::Error`.
+///
+/// Win32 errors are surfaced as `HRESULT` values of the form `0x8007_00NN`,
+/// where `NNNN` is the Win32 code.
+fn win32_code(err: &windows::core::Error) -> Option<u32> {
+    let hresult = err.code().0 as u32;
+    if hresult & 0xFFFF_0000 == 0x8007_0000 {
+        Some(hresult & 0x0000_FFFF)
+    } else {
+        None
+    }
+}
+
+/// Whether a read error means the peer simply went away.
+///
+/// A client process exiting closes its handle, which surfaces as
+/// `ERROR_BROKEN_PIPE` or `ERROR_PIPE_NOT_CONNECTED` rather than a clean EOF.
+/// That is a normal disconnect, not a fault, so it maps to
+/// [`IpcError::PeerClosed`] and is not logged as a warning.
+fn is_peer_disconnect(err: &windows::core::Error) -> bool {
+    matches!(
+        win32_code(err),
+        Some(ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED)
+    )
+}
+
 /// Reads exactly `buffer.len()` bytes, mapping a clean EOF to `PeerClosed`.
 fn read_exact(handle: HANDLE, buffer: &mut [u8]) -> IpcResult<()> {
     let mut read_total = 0_usize;
@@ -527,14 +558,20 @@ fn read_exact(handle: HANDLE, buffer: &mut [u8]) -> IpcResult<()> {
         // * `handle` is a live pipe handle.
         // * `&mut buffer[read_total..]` is an exclusively borrowed region of at
         //   least one byte, so the API cannot write past the buffer.
-        unsafe {
+        let result = unsafe {
             windows::Win32::Storage::FileSystem::ReadFile(
                 handle,
                 Some(&mut buffer[read_total..]),
                 Some(&mut bytes_read),
                 None,
             )
-            .map_err(|err| IpcError::Io(std::io::Error::other(err.to_string())))?;
+        };
+
+        if let Err(err) = result {
+            if read_total == 0 && is_peer_disconnect(&err) {
+                return Err(IpcError::PeerClosed);
+            }
+            return Err(IpcError::Io(std::io::Error::other(err.to_string())));
         }
 
         if bytes_read == 0 {
@@ -703,26 +740,15 @@ pub fn describe_pipe_security(path: &str) -> IpcResult<String> {
 
 /// The endpoint path the engine uses for the current user and process.
 ///
-/// The suffix is the process id so two engine instances do not collide.
+/// Superseded by [`crate::endpoint::default_endpoint_path`], which both the
+/// engine and the Studio use. It is kept only because the SID-derived name is
+/// still useful when two *processes* of the same user must be isolated (for
+/// example an integration test that must not collide with a running engine).
 #[must_use]
-pub fn default_endpoint_path() -> String {
+pub fn per_process_endpoint_path() -> String {
     // SAFETY: `GetCurrentProcessId` has no preconditions and cannot fail.
     let pid = unsafe { GetCurrentProcessId() };
     pipe_name(&pid.to_string())
-}
-
-/// The SID string of the current user, for diagnostics.
-pub fn current_user_sid_string() -> IpcResult<String> {
-    current_user_sid()
-}
-
-/// The `OBJECT_SECURITY_INFORMATION` flags used when querying the DACL.
-///
-/// Exposed so a caller can request an equivalent query without hard-coding the
-/// newtype.
-#[must_use]
-pub fn dacl_security_information() -> OBJECT_SECURITY_INFORMATION {
-    DACL_SECURITY_INFORMATION
 }
 
 #[cfg(test)]
@@ -764,8 +790,8 @@ mod tests {
     }
 
     #[test]
-    fn default_endpoint_path_is_per_process() {
-        let path = default_endpoint_path();
+    fn per_process_endpoint_path_is_distinct_from_the_session_endpoint() {
+        let path = per_process_endpoint_path();
         assert!(path.starts_with(PIPE_PREFIX));
         assert!(path.contains('-'));
     }
@@ -798,7 +824,7 @@ mod tests {
 
     #[test]
     fn current_user_sid_looks_like_a_sid() {
-        let sid = current_user_sid_string().expect("the process token must expose a user SID");
+        let sid = current_user_sid().expect("the process token must expose a user SID");
         assert!(sid.starts_with("S-1-"), "unexpected SID form: {sid}");
     }
 

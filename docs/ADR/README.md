@@ -38,6 +38,9 @@ with this structure:
 | [0007](0007-diagnostics-are-privacy-preserving-by-default.md) | Diagnostics are privacy-preserving by default | Accepted | 0 |
 | [0008](0008-studio-frontend-toolchain-and-licence-boundary.md) | Studio frontend toolchain and the runtime-component licence boundary | Accepted | 0 (binding on 4) |
 | [0009](0009-threaded-engine-no-async-runtime.md) | A threaded engine with no async runtime at Gate 0 | Accepted | 0 |
+| [0010](0010-visual-studio-open-folder-native-debugging.md) | Visual Studio Open Folder integration and native Windows diagnostics | Accepted | 0 |
+| [0011](0011-studio-is-a-thin-ipc-client.md) | The Studio is a thin client of the shared endpoint contract | Accepted | 0 |
+| [0012](0012-accepting-mpl-2-dependencies.md) | Accepting MPL-2.0 dependencies from the Tauri toolchain | Accepted | 0 |
 
 ## Related documents
 

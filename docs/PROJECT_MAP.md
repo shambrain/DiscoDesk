@@ -18,11 +18,12 @@ Use this map to navigate without loading the entire architecture and research co
 
 | Path | Responsibility | Status |
 |---|---|---|
-| `crates/dd-ipc` | Framing, envelopes, command/error contract, named-pipe + UDS transports | Implemented, tested |
+| `crates/dd-ipc` | Framing, envelopes, command/error contract, named-pipe + UDS transports, **shared endpoint derivation** | Implemented, tested |
 | `crates/dd-core` | Authoritative state machine, lifecycle, typed engine error | Implemented, tested |
 | `crates/dd-diagnostics` | Privacy-preserving structured events, path redaction, rotating log | Implemented, tested |
 | `apps/discodesk-engine` | Background engine binary: IPC server, CLI | Implemented, tested |
-| `apps/discodesk-studio` | Tauri v2 shell, separate process | **Not created yet** |
+| `apps/discodesk-studio/src-tauri` | Tauri v2 shell, `EngineClient`, three IPC commands, `--probe` mode | Implemented, tested |
+| `apps/discodesk-studio/src` | React 19 + TypeScript control UI (connection states only) | Implemented, tested |
 | `dd-audio`, `dd-dsp`, `dd-analysis`, `dd-renderer`, `dd-package`, `dd-steam` | Deferred to their gates | **Must not exist** (enforced by `scripts/check.ps1`) |
 
 ## Task-to-section map
@@ -44,7 +45,8 @@ Use this map to navigate without loading the entire architecture and research co
 | Wand/watcher/presets/notifications | Addendum A and docs/DESKTOP_EXPERIENCE_SPEC.md | desktop-experience-engineer |
 | Harness/model routing | docs/AI_TOOLING_DECISION.md | discodesk-lead, research-licensing-auditor |
 | Windows build/debug tooling | docs/VISUAL_STUDIO_WORKFLOW.md | platform-engineer, rust-engineer |
-| Dependency versions and licences | RESEARCH.md §16 | research-licensing-auditor |
+| Studio process and IPC client | docs/ADR/0011 and docs/IPC_PROTOCOL.md | tauri-ui-engineer, systems-architect |
+| Dependency versions and licences | RESEARCH.md §16, docs/ADR/0012 | research-licensing-auditor |
 
 ## Work rules
 1. Inspect current files and state before editing.

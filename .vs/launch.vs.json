@@ -15,6 +15,20 @@
       "projectTarget": "",
       "name": "DiscoDesk Engine (Optimized + Symbols)",
       "args": []
+    },
+    {
+      "type": "default",
+      "project": "target\\debug\\discodesk-studio.exe",
+      "projectTarget": "",
+      "name": "DiscoDesk Studio (Debug)",
+      "args": []
+    },
+    {
+      "type": "default",
+      "project": "target\\release-with-symbols\\discodesk-studio.exe",
+      "projectTarget": "",
+      "name": "DiscoDesk Studio (Optimized + Symbols)",
+      "args": []
     }
   ]
 }

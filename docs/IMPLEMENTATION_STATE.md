@@ -1,13 +1,14 @@
 # DiscoDesk implementation state
 
 **Last updated:** 2026-11-27
-**Status:** Gate 0 scaffold implemented and verified on the Windows development host.
-**One Gate 0 acceptance item is NOT met:** there is no `discodesk-studio` binary yet, so
-"engine and Studio are separate processes" cannot be demonstrated. See §4.
+**Status:** Engine, IPC contract, diagnostics and the Tauri Studio are implemented and
+verified as **independent processes communicating over the real local IPC contract**, on
+the Windows development host.
+**Gate 0 remains open for one reason:** the complete GitHub Actions pipeline has not yet
+been observed green. See §6.
 
-Evidence in this document was produced by running the commands in §3 on the host
-described in `docs/PLATFORM_SUPPORT.md` §1. Nothing here is inferred from the fact that
-a crate compiles.
+Every number below was produced by running the command in §3. Nothing is inferred from
+the fact that a crate compiles.
 
 ---
 
@@ -15,18 +16,25 @@ a crate compiles.
 
 - [x] Product concept and scope documented.
 - [x] Research and architecture documents added.
-- [x] OpenCode project instructions added.
-- [x] Coordinator and specialist agent definitions added.
+- [x] OpenCode project instructions and specialist agents added.
 - [x] Reusable project skills added.
 - [x] Rust workspace scaffolded and building.
-- [x] Gate 0 CI defined (format, lint, test, build, dependency audit).
-- [x] Local IPC contract implemented (framing, envelopes, named pipe, error codes).
+- [x] Local IPC contract implemented (framing, envelopes, named pipe + UDS, error codes).
 - [x] Engine state machine and lifecycle implemented.
 - [x] Privacy-preserving diagnostics implemented.
 - [x] `discodesk-engine` binary implemented and verified over a real pipe.
-- [x] Visual Studio 2026 Open Folder integration verified (`-Action Doctor` exits 0).
-- [ ] **Tauri Studio scaffolded.** Not created. Gate 0's "separate processes" criterion
-      is therefore unmet.
+- [x] **`discodesk-studio` Tauri v2 application implemented** (Rust backend + React UI).
+- [x] **Studio ↔ engine communication verified with both real binaries.**
+- [x] **Closing the Studio verified not to stop the engine.**
+- [x] Visual Studio 2026 Open Folder integration verified, including Studio build/debug.
+- [x] Gate 0 CI defined (frontend, format, lint, test, build, Tauri build, audit).
+- [x] Licence and advisory gate executed locally (`cargo deny check all`, exit 0).
+- [x] **GitHub Actions observed green for the engine/IPC/Visual Studio commit
+      `af59646`** — all four jobs passed (format+lint, test, build, dependency audit).
+      Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46019416540>
+- [ ] **GitHub Actions green for the Studio commit.** The Studio work is verified locally
+      and its workflow run must be watched to completion. Gate 0 closes when that run is
+      green.
 - [ ] Audio capture implemented. Gate 1.
 - [ ] DSP telemetry implemented and validated. Gate 1.
 - [ ] wgpu preview renderer implemented. Gate 2.
@@ -39,58 +47,66 @@ a crate compiles.
 
 ---
 
-## 2. What actually exists
+## 2. What exists
 
 | Path | Contents | Verified by |
 |---|---|---|
-| `crates/dd-ipc` | 10-byte frame codec (`DDF1` + version + length), 1 MiB bound asserted before allocation, JSON request/response envelopes, 16 stable error codes, command enum, Windows named-pipe transport with a protected DACL, Unix domain socket transport | 49 unit tests |
-| `crates/dd-core` | `EngineState` (all 16 states from `ARCHITECTURE.md` §11 declared; 4 reachable at Gate 0), explicit transition table, `Engine` with idempotent `start`/`stop` and poison-recovering state lock | 26 unit tests |
-| `crates/dd-diagnostics` | `DiagnosticEvent`, `EventSink`, `BoundedEventBuffer`, path redaction and hashing, opt-in rotating log sink that writes nothing by default | 18 unit tests + 1 doctest |
-| `apps/discodesk-engine` | CLI (`--log-level`, `--log-dir`, `--print-endpoint`, `--endpoint`), IPC server, command dispatch, clean shutdown | 5 unit tests + 16-assertion process smoke test |
+| `crates/dd-ipc` | 10-byte frame codec (`DDF1` + version + length), 1 MiB bound asserted before allocation, JSON envelopes, 16 stable error codes, command enum, **shared endpoint derivation**, Windows named pipe with a protected DACL, Unix domain socket | 56 unit tests |
+| `crates/dd-core` | `EngineState` (all 16 states from `ARCHITECTURE.md` §11 declared; 4 reachable at Gate 0), explicit transition table, `Engine` with idempotent start/stop | 26 unit tests |
+| `crates/dd-diagnostics` | `DiagnosticEvent`, `EventSink`, `BoundedEventBuffer`, path redaction and hashing, opt-in rotating log | 18 unit tests + 1 doctest |
+| `apps/discodesk-engine` | CLI, IPC server, command dispatch, clean shutdown | 5 unit tests + process smoke |
+| `apps/discodesk-studio/src-tauri` | Tauri v2 shell, `EngineClient` with an injectable `Connector`, three commands (`engine_status`, `engine_endpoint`, `engine_disconnect`), headless `--probe` mode | 18 unit tests |
+| `apps/discodesk-studio/src` + `ui` | React 19 + TypeScript control UI: connection/lifecycle states, engine details, bounded polling | 28 frontend tests |
 
 **Deliberately absent:** `dd-audio`, `dd-dsp`, `dd-analysis`, `dd-renderer`, `dd-package`,
-`dd-steam`, `dd-platform` (including `crates/dd-platform/src/windows`), and
-`apps/discodesk-studio`. `scripts/check.ps1` and CI fail if a deferred crate directory
-appears.
+`dd-steam`, `dd-platform` (including `crates/dd-platform/src/windows`).
+`scripts/check.ps1` and CI fail if a deferred crate directory appears.
 
-`dd-platform` was **not** created. `ARCHITECTURE.md` calls for a `DesktopHost` trait, but
-at Gate 0 it would have no implementation and no caller, which `AGENTS.md` forbids. The
-trait belongs with its first adapter at Gate 3.
+The Studio contains **no** audio capture, DSP, renderer, wallpaper hosting or package code,
+and does not depend on any future engine crate. Its only engine dependency is `dd-ipc`.
 
 ---
 
 ## 3. Verification evidence
 
-Command and result, on Windows 10 build 19045, Rust 1.100.0 `x86_64-pc-windows-msvc`,
-MSVC 14.52.37025, Windows SDK 10.0.26100.0.
+Host: Windows 10 build 19045, Rust 1.100.0 `x86_64-pc-windows-msvc`, MSVC 14.52.37025,
+Windows SDK 10.0.26100.0, Node 26.12.1, WebView2 158.0.4370.33.
 
-### 3.1 Canonical check (also what CI runs)
+### 3.1 Canonical check
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check.ps1
 ```
 
+Exit code 0. Steps, in order:
+
 | Step | Result |
 |---|---|
-| Gate 0 deferred-crate guard | ok: no deferred crate directories present |
+| Deferred-crate guard | ok: no deferred crate directories present |
 | Unbounded-channel guard | ok: no unbounded channels |
-| `cargo fmt --all -- --check` | pass (exit 0) |
+| Studio frontend (typecheck, tests, production build) | **28 tests passed**, typecheck clean, Vite build 225 kB JS / 2.8 kB CSS |
+| `cargo fmt --all -- --check` | pass |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | pass, **0 warnings** |
-| `cargo test --workspace --all-features` | **98 passed, 0 failed, 0 ignored** (+ 1 doctest passed) |
+| `cargo test --workspace --all-features` | **123 passed, 0 failed, 0 ignored** (+1 doctest) |
 | `cargo build --workspace` | pass |
-| IPC smoke test | **passed**, 16/16 assertions |
+| IPC smoke test | **passed**, 20/20 assertions |
+| Studio launch smoke test | **passed**, 11/11 assertions |
+| `cargo deny check all` | **exit 0** |
 
-Per-crate test counts: `dd-core` 26, `dd-diagnostics` 18, `dd-ipc` 49, `discodesk-engine`
-5 (sum 98), plus 1 doctest in `dd-diagnostics`.
+Rust test counts by crate: `dd-core` 26, `dd-diagnostics` 18, `dd-ipc` 56,
+`discodesk-engine` 5, `discodesk-studio` 18 → **123**, plus 1 doctest.
 
 ### 3.2 Builds
 
 | Command | Result |
 |---|---|
 | `cargo build --workspace` | pass |
-| `cargo build --workspace --release` | pass (optimized, `strip = "symbols"`) |
+| `cargo build --workspace --release` | pass |
 | `Invoke-DiscoDeskVS.ps1 -Action BuildDebug` | pass |
-| `Invoke-DiscoDeskVS.ps1 -Action BuildSymbols` | pass (`release-with-symbols`, 19.9 s) |
+| `Invoke-DiscoDeskVS.ps1 -Action BuildSymbols` | pass (`release-with-symbols`) |
+| `Invoke-DiscoDeskVS.ps1 -Action BuildStudio` | pass (frontend + debug binary) |
+| `Invoke-DiscoDeskVS.ps1 -Action BuildStudioSymbols` | pass |
+| `npx tauri build` (Studio) | pass, 2 m 05 s, produced `target/release/discodesk-studio.exe` |
 
 Artifacts and symbols:
 
@@ -100,44 +116,46 @@ Artifacts and symbols:
 | `target/debug/discodesk_engine.pdb` | 39,563,264 B |
 | `target/release-with-symbols/discodesk-engine.exe` | 1,370,624 B |
 | `target/release-with-symbols/discodesk_engine.pdb` | 20,631,552 B |
+| `target/debug/discodesk-studio.exe` | 12,758,528 B |
+| `target/debug/discodesk_studio.pdb` | 111,489,024 B |
+| `target/release-with-symbols/discodesk-studio.exe` | 4,535,296 B |
+| `target/release-with-symbols/discodesk_studio.pdb` | 66,236,416 B |
 
-> Rust names the PDB after the **underscored** crate name (`discodesk_engine.pdb`), not the
-> binary name. A file-existence check for `discodesk-engine.pdb` fails wrongly. The
-> `release` profile strips symbols by design, so it emits no usable PDB.
+> Rust names PDBs after the **underscored** crate name (`discodesk_engine.pdb`,
+> `discodesk_studio.pdb`), not the binary name. A check for `discodesk-engine.pdb`
+> reports a false negative.
 
-### 3.3 IPC end-to-end smoke test
+### 3.3 IPC end-to-end (`scripts/ipc-smoke.ps1`)
 
-`scripts/ipc-smoke.ps1` starts the real `discodesk-engine.exe`, connects over the real
-named pipe, and asserts:
+Starts the real engine, runs the real Studio binary's `--probe` against it, then drives the
+protocol from the outside. 20/20 assertions passed, including:
 
-| # | Assertion | Result |
-|---|---|---|
-| 1 | `--version` prints a name and version | ok |
-| 2 | Engine reports readiness | ok |
-| 3 | Client connects to the named pipe | ok |
-| 4 | Response frame version is 1 | ok |
-| 5 | `request_id` is echoed | ok |
-| 6 | `GetEngineStatus` state is `IdleReady` | ok |
-| 7 | `isRunning` is true | ok |
-| 8 | `surfaceCount` is 0 | ok |
-| 9 | Capabilities marked `probed: false` | ok |
-| 10 | `wallpaperHosting` is `unknown`, not `supported` | ok |
-| 11 | `GetAudioSources` → code 1015 (`NotImplemented`) | ok |
-| 12 | The refusal names Gate 1 | ok |
-| 13 | Unknown command → code 1006, connection stays open | ok |
-| 14 | `ShutdownEngine` is acknowledged | ok |
-| 15 | Engine process exits | ok |
-| 16 | Engine exit code is 0 | ok |
+- `--version`, readiness line, `Studio --probe` exit code 0
+- Studio reports `kind: connected`, `status.state: IdleReady`, protocol agreement
+- frame version, `request_id` echo, `surfaceCount: 0`
+- `GetAudioSources` → 1015 (`NotImplemented`) naming Gate 1
+- unknown command → 1006 with the connection kept open
+- `ShutdownEngine` acknowledged, engine exit code 0
 
-### 3.4 Visual Studio environment
+### 3.4 Studio launch lifecycle (`scripts/studio-smoke.ps1`)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/vs/Invoke-DiscoDeskVS.ps1 -Action Doctor
-```
+11/11 assertions passed:
 
-Exit code 0. Resolved: Build Tools 2026 `18.12.1`, MSVC `14.52.37025`, `cl`,
-`link`, `msbuild`, `cmake`, Windows SDK 10.0.26100.0, Rust 1.100.0 MSVC, WebView2
-158.0.4370.33, IDE `C:\Program Files\Microsoft Visual Studio\18\Insiders`.
+| Assertion | Result |
+|---|---|
+| Engine reports readiness | ok |
+| Studio process starts | ok |
+| Studio creates a visible window | ok (title `DiscoDesk Studio`) |
+| Window title identifies the Studio | ok |
+| Engine running while Studio is open | ok |
+| Studio process exits after the window closes | ok (exit 0) |
+| **Engine is STILL running after the Studio closed** | ok |
+| A fresh Studio probe still reaches the engine | ok (exit 0, `connected`) |
+| Engine answers after the Studio closed | ok |
+| Engine exits after `ShutdownEngine` | ok |
+| Engine exit code | 0 |
+
+This is the executable form of `docs/ADR/0001`.
 
 ### 3.5 Dependency licence and advisory gate
 
@@ -145,31 +163,44 @@ Exit code 0. Resolved: Build Tools 2026 `18.12.1`, MSVC `14.52.37025`, `cl`,
 cargo deny check all
 ```
 
-`cargo-deny 0.22.1` installed locally; **exit code 0**.
+`cargo-deny 0.22.1`, **exit 0**. Warnings only:
 
-| Result | Detail |
-|---|---|
-| Errors | none |
-| Warnings | 7 × `license-not-encountered` (allow-list entries no crate currently uses: `0BSD`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `MPL-2.0`, `Unicode-DFS-2016`) and 1 × `duplicate` (`syn` 2.0.119 and 3.0.10, expected in the proc-macro ecosystem) |
-| Advisories | none outstanding |
-| Sources | crates.io only |
+| Warning | Count | Meaning |
+|---|---|---|
+| `license-not-encountered` | 4 | allow-list entries no crate currently uses |
+| `duplicate` | 5 | e.g. `syn` 2.0 and 3.0 in the proc-macro ecosystem |
 
-The `license-not-encountered` warnings are informational: they confirm that no crate in
-the graph uses those licences. They are not suppressed, because the allow list is a
-policy statement rather than a description of today's graph.
+`[graph] targets = ["x86_64-pc-windows-msvc"]` scopes the audit to the only shipped
+target; macOS/Linux triples must be added with Gates 7/8.
+`MPL-2.0` is present in the Tauri chain (`cssparser`, `selectors`, `dtoa-short`,
+`option-ext`); obligations are recorded in `docs/ADR/0012`.
 
-`THIRD_PARTY_NOTICES.md` is now generated from `cargo deny list` rather than being a
-placeholder.
+### 3.6 Visual Studio environment
 
-### 3.6 Not verified
+`-Action Doctor` exit 0: Build Tools 2026 `18.12.1`, MSVC `14.52.37025`, `cl`, `link`,
+`msbuild`, `cmake`, Windows SDK 10.0.26100.0, Rust 1.100.0 MSVC, WebView2 158.0.4370.33,
+IDE `C:\Program Files\Microsoft Visual Studio\18\Insiders`, engine entry point present.
+
+### 3.7 Continuous integration
+
+| Run | Commit | Result |
+|---|---|---|
+| [46019416540](https://github.com/shambrain/DiscoDesk/actions/runs/46019416540) | `af59646` (engine, IPC, VS tooling) | **success** — format+lint, test, build, dependency audit all passed |
+| CodeQL `af59646` | `af59646` | **success** |
+
+The Studio changes are verified locally (§3.1–§3.4) and have their own workflow run
+pending. It is **not** claimed green until it completes.
+
+### 3.8 Not verified
 
 | Item | Status |
 |---|---|
-| CI actually running green | **NOT YET.** CI is defined and every command is locally verified, but no workflow run has been observed against GitHub. |
-| Studio/engine separation | **NOT DEMONSTRABLE.** No Studio binary exists yet. |
-| Native debugger breakpoints/PDB load in the IDE | **NOT VERIFIED.** PDBs exist and `devenv.exe` is installed, but no interactive debug session was performed (that requires a human at the IDE). |
+| GitHub Actions green for the Studio commit | **PENDING.** Local evidence is complete; the pushed workflow run must be watched. |
+| Interactive debugger session (breakpoints, call stack) | **NOT VERIFIED.** PDBs exist and launch profiles are configured, but stepping through code needs a human at the IDE. |
 | CPU/memory profiling | **NOT VERIFIED.** No profiling session was run; no performance numbers are claimed anywhere. |
-| Ctrl-C graceful shutdown | **NOT IMPLEMENTED.** The documented stop path is `ShutdownEngine`. |
+| macOS / Linux | **NOT IMPLEMENTED** (Gates 7/8). |
+| Ctrl-C graceful shutdown of the engine | **NOT IMPLEMENTED.** The documented stop path is `ShutdownEngine`. |
+| Studio console window hidden in windowed mode | **NOT IMPLEMENTED.** The console subsystem stays attached so `--probe` can write to stdout. |
 
 ---
 
@@ -178,59 +209,84 @@ placeholder.
 | Directive §9 criterion | Status |
 |---|---|
 | Check/build/test on the actual supported Windows target | **Met** — §3.1, §3.2 |
-| CI reproduces the same commands | **Defined, not yet observed green** |
-| Engine and Studio are separate processes | **NOT MET** — no Studio binary |
+| CI reproduces the same commands | **Met for `af59646`** (all four jobs green); the Studio run is pending |
+| **Engine and Studio are separate processes** | **Met** — §3.3, §3.4 |
 | IPC ownership, versioning, permissions, error behaviour documented | **Met** — `docs/IPC_PROTOCOL.md` |
-| IPC behaviour covered by tests | **Met for frame/envelope/command/ACL**; version-mismatch at transport level is documented as "close connection", not tested end to end |
-| No unbounded background task | **Met** — no async runtime, guards in `check.ps1` |
+| IPC behaviour covered by tests | **Met** — frame/envelope/command/ACL, plus both process smoke tests |
+| No unbounded background task | **Met** — no async runtime in the engine; one interval and one in-flight guard in the UI; guards in `check.ps1` |
 | No placeholder marked complete | **Met** — deferred crates absent; capability probes report `unknown` |
-| Format/lint/test/security configuration | **Met** — `cargo deny check all` exits 0 |
-| Licence and third-party notices with verified contents | **Met** — `THIRD_PARTY_NOTICES.md` generated from `cargo deny list`; `LICENSE` honestly marked undecided |
+| Format/lint/test/security configuration | **Met** |
+| Licence and third-party notices with verified contents | **Met** — generated from `cargo deny list` |
 | `PLATFORM_SUPPORT.md` | **Met** — measured matrix |
-| Fixture conventions and integration harness | **Met** — `scripts/ipc-smoke.ps1` is the integration harness |
+| Fixture conventions and integration harness | **Met** — two smoke scripts driving real binaries |
 
-**Conclusion: Gate 0 is not closed.** The remaining blockers are the missing Studio
-scaffold and an observed-green CI run. Gate 1 (audio capture) must not begin until both
-are resolved.
+**Gate 0 stays open on exactly one item:** the GitHub Actions run for the Studio commit has
+not been observed green. Everything else is met with recorded evidence, and CI has already
+been proven green once for the engine/IPC commit.
+
 ---
 
-## 5. Defects found and fixed during verification
+## 5. Defects found and fixed during this work
 
-Recorded because each was a real bug that a compile-only check would have hidden:
+Grouped by cause; each compiled cleanly or was invisible to a compile-only check.
 
-1. `dd-ipc/src/frame.rs` had `};` where `});` was required — the crate had never compiled.
-2. `transport/mod.rs` did not declare the `windows`/`unix` submodules.
+**Engine / IPC**
+1. `frame.rs` had `};` where `});` was required — `dd-ipc` had never compiled.
+2. `transport/mod.rs` did not declare its `windows`/`unix` submodules.
 3. `SetEffectSettingsPayload` derived `Eq` while containing `f32`.
-4. `windows.rs` was written against a different `windows` crate API: 22 errors. Notably
-   `PIPE_ACCESS_DUPLEX` is in `Storage::FileSystem`, `ReadFile`/`WriteFile` take slices,
-   `CreateFileW` returns `Result`, and `CreateNamedPipeW` takes `SECURITY_ATTRIBUTES`.
+4. `windows.rs` targeted a different `windows`-crate API (22 errors); rewritten against the
+   vendored 0.62.2 bindings.
 5. `tracing-subscriber` was missing the `env-filter` feature.
-6. `dd-diagnostics::build_file_writer` passed a byte count to `max_log_files` and dropped
-   the `WorkerGuard` returned by `non_blocking`, which would have silently stopped the
-   log writer.
-7. `clippy.toml` contained keys that are hard errors (`max-file-size`, `fix`).
-8. **Engine bug:** the pipe was created with `nMaxInstances = 1`, so creating the
-   replacement listening instance failed and the just-accepted connection was dropped.
-9. **Engine bug:** `DisconnectNamedPipe` in `Drop` discards unread data, losing the
-   `ShutdownEngine` acknowledgement.
-10. **Contract bug:** the engine closed the connection after an unknown command; the
-    documented behaviour is to keep it open.
-11. Two unit tests encoded wrong assumptions: `EnvFilter` accepts bare target names, and
-    a pipe name legitimately starts with `\\.\pipe\`.
-12. **`deny.toml` did not match the cargo-deny 0.22.1 schema.** `[licenses] unknown` and
-    `[licenses] deny` were removed upstream (the check is deny-by-default), and
-    `[advisories] unmaintained`/`unsound` take a scope (`all|workspace|transitive|none`),
-    not a lint level. Corrected, with the GPL/AGPL/LGPL/CC-BY-NC refusal preserved by
-    their absence from the allow list.
-13. **`[licenses.private] ignore` did not apply** because the workspace crates lacked
-    `publish = false`. Added it — the crates genuinely are unpublished.
-14. **Wildcard dependencies:** the intra-workspace `path` dependencies had no `version`,
-    which is an implicit `*`. Added explicit `version = "0.1.0"` instead of weakening the
-    `wildcards = "deny"` check.
+6. `build_file_writer` dropped the `WorkerGuard` from `non_blocking`, which would have
+   silently stopped the log writer.
+7. Pipe created with `nMaxInstances = 1`, so the replacement listening instance could not
+   be created and the accepted connection was dropped.
+8. `DisconnectNamedPipe` in `Drop` discards unread data, losing the `ShutdownEngine`
+   acknowledgement.
+9. The engine closed the connection after an unknown command; the contract keeps it open.
+10. A client process exiting surfaced as `ERROR_BROKEN_PIPE` and was logged as a warning;
+    it is a normal disconnect and now maps to `PeerClosed`.
+
+**Tooling and policy**
+11. `deny.toml` did not match cargo-deny 0.22.1: `licenses.unknown`/`licenses.deny` were
+    removed upstream, and `advisories.unmaintained`/`unsound` take scopes, not lint levels.
+12. `[licenses.private] ignore` did not apply because the crates lacked `publish = false`.
+13. Intra-workspace `path` dependencies had no `version`, which is an implicit `*`.
+14. `rustfmt.toml` used `newline_style = "Windows"` while `.gitattributes` forces `eol=lf`,
+    so `cargo fmt --check` failed on a fresh checkout. Switched to `Unix`.
+15. `clippy.toml` contained keys that are hard errors (`max-file-size`, `fix`).
+16. `[graph]` audited the entire cross-platform graph, reporting a Linux-only `glib`
+    unsoundness we cannot act on; scoped to the shipped target.
+
+**Visual Studio**
+17. `VsDevCmd` environment import was broken: PowerShell re-quoted the nested `cmd /s /c`
+    argument, and `ExitCode` was read after `Dispose()`.
+18. Build/Rebuild Open Folder tasks used `type: launch` with `contextType: build`, making
+    VS treat them as debug targets.
+
+**Studio**
+19. **Two competing endpoint derivations** (engine: `USERNAME`; transport: SID + pid). The
+    SID+pid form is unguessable to another process, so the Studio could never have found
+    the engine. Consolidated into `dd_ipc::endpoint`.
+20. Scripted test responses hard-coded `request_id: 1` while the client correctly
+    incremented, which is why the fixtures were wrong, not the client.
+21. `tauri-build` requires `icons/icon.ico` for the Windows resource file even with
+    bundling disabled; a provisional icon was generated and is disclosed in the notices.
 
 ---
 
-## 6. Newly specified (not implemented)
+## 6. What must happen next, in order
+
+1. **Watch the pushed CI run to completion** and record the run URL. Gate 0 closes only
+   when every job is green. If a job fails, fix the cause — never `continue-on-error`.
+2. Perform one interactive Visual Studio debug session against `discodesk-studio.exe`
+   (breakpoint, call stack, PDB load) and record it as evidence.
+3. Decide the project licence (`docs/GATE0_PLAN.md` D1).
+4. Only then begin Gate 1 (audio capture and DSP).
+
+---
+
+## 7. Newly specified (not implemented)
 
 - [ ] M2 per-monitor wallpaper observer and authoritative reconciliation.
 - [ ] M2 content-hash cache reuse on wallpaper change.
@@ -242,14 +298,3 @@ Recorded because each was a real bug that a compile-only check would have hidden
 - [ ] Calm Studio design system and full accessibility review.
 
 These remain unchecked and deferred until M1 Windows MVP stabilization.
-
----
-
-## 7. Next actions, in order
-
-1. Scaffold `apps/discodesk-studio` as a minimal Tauri v2 shell that connects to the
-   engine and displays connection state only. This closes the last Gate 0 technical gap.
-2. Observe one green CI run and record the run URL.
-3. Run `cargo deny check all` for real and generate `THIRD_PARTY_NOTICES.md`.
-4. Decide the project licence (see `docs/GATE0_PLAN.md` D1).
-5. Only then begin Gate 1.

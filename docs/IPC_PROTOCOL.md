@@ -50,6 +50,23 @@ pipe is called.
 `--endpoint <path>` overrides the path. That bypasses the per-user default name but not
 the security descriptor.
 
+### 2.1 The endpoint is derived, not discovered
+
+Both processes call `dd_ipc::endpoint::default_endpoint_path()`. There is exactly one
+derivation, so either process can be started first:
+
+- the engine listens on it and prints it with `--print-endpoint`;
+- the Studio connects to it and never needs to be told.
+
+The name deliberately contains **no process id**, so it is stable within a user session.
+The Windows transport also exposes `per_process_endpoint_path()` (SID + pid) for the one
+case where a test must avoid colliding with a running engine; that is not the product
+default.
+
+An earlier revision had two derivations — `USERNAME` in the engine and SID + pid in the
+transport. Both looked correct and named different pipes; the Studio could never have
+found the engine. See `docs/ADR/0011`.
+
 ---
 
 ## 3. Security model
@@ -267,7 +284,7 @@ code, never on the message text (`docs/ADR/0005`).
 | Malformed JSON envelope | Typed 1011 with `request_id: 0`, then close | Error without correlation |
 | Unknown command | Typed 1006, **connection stays open** | Correlated error |
 | Deferred command | Typed 1015, connection stays open | Correlated error with the gate name |
-| Client disconnects | Connection thread ends; engine stays in `IdleReady` | — |
+| Client disconnects | Connection thread ends; engine stays in `IdleReady`. A client process exiting surfaces as `ERROR_BROKEN_PIPE`/`ERROR_PIPE_NOT_CONNECTED`, which maps to `PeerClosed` and is not logged as a warning | — |
 | `ShutdownEngine` | Reply, then stop listener and exit `0` | Successful response |
 
 **A failed connection never stops the engine.** Accept and per-connection errors are
@@ -296,3 +313,24 @@ Stated explicitly so this document is not read as a capability claim:
 - No diagnostics event buffering behind `GetDiagnosticsSnapshot`.
 - No authentication beyond the OS-level endpoint ACL. No token, no nonce.
 - Ctrl-C is not intercepted; the graceful stop path is `ShutdownEngine`.
+- Named-pipe reads have no timeout, so a wedged engine leaves one blocked OS thread in the
+  client. The Studio bounds this to a single in-flight request; recovering needs a Studio
+  restart.
+
+## 12. Reference client: the Studio
+
+`apps/discodesk-studio/src-tauri/src/engine_client.rs` is the reference implementation of
+this contract. Its behaviour is normative for other clients:
+
+| Property | Behaviour |
+|---|---|
+| Commands used | `GetEngineStatus` only, at Gate 0 |
+| `ShutdownEngine` | **Never sent.** The Studio closing must not stop the engine. A unit test asserts the set of commands actually transmitted |
+| Connection reuse | One transport, reused while healthy; dropped on any transport failure and re-established on the next request |
+| Concurrency | At most one in-flight request; a single polling interval in the UI |
+| Request ids | Start at 1 and increase; a response with a different id is rejected |
+| Status caching | None. Every rendered value comes from the most recent response |
+| Engine state ownership | None. `dd-core` remains the only writer of engine state |
+
+The Studio's `--probe` mode performs one round-trip and prints the resulting view as JSON,
+which is how `scripts/ipc-smoke.ps1` verifies the boundary with the real binaries.

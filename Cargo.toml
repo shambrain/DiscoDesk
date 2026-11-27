@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "apps/discodesk-engine",
+    "apps/discodesk-studio/src-tauri",
     "crates/dd-core",
     "crates/dd-diagnostics",
     "crates/dd-ipc",
@@ -51,6 +52,12 @@ windows = { version = "0.62.2", default-features = false, features = [
     "Win32_System_Threading",
 ] }
 
+# Tauri v2 (Studio shell only). Versions verified against crates.io on
+# 2026-11-27; see RESEARCH.md §16.3. Default features are kept because the
+# desktop shell needs the `wry` webview backend.
+tauri = { version = "2.12.7" }
+tauri-build = { version = "2.7.6" }
+
 # Intra-workspace crates.
 #
 # `version` is declared alongside `path` deliberately: a path dependency with no
@@ -64,6 +71,10 @@ dd-ipc = { path = "crates/dd-ipc", version = "0.1.0" }
 [workspace.lints.rust]
 # `unsafe_op_in_unsafe_fn` keeps every unsafe block explicit inside unsafe fns.
 unsafe_op_in_unsafe_fn = "deny"
+# Warnings are errors for every workspace crate, so a local `cargo build` fails
+# exactly where CI does. This is scoped by the `[lints]` table, which Cargo
+# applies to workspace members only: third-party crates are never affected.
+warnings = "deny"
 missing_debug_implementations = "warn"
 unused_qualifications = "warn"
 

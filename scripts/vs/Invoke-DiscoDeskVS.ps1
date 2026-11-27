@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Doctor', 'Check', 'BuildDebug', 'RebuildDebug', 'BuildSymbols', 'Test', 'OpenIDE', 'DeveloperShell')]
+    [ValidateSet('Doctor', 'Check', 'BuildDebug', 'RebuildDebug', 'BuildSymbols', 'Test', 'BuildStudio', 'BuildStudioSymbols', 'ProbeStudio', 'OpenIDE', 'DeveloperShell')]
     [string]$Action = 'Doctor'
 )
 
@@ -116,8 +116,49 @@ Commit or pull the real Gate 0 engine scaffold before building or debugging the 
     }
 }
 
-function Invoke-Cargo {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+function Get-NpmCommand {
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+    if (-not $npm) {
+        throw 'npm was not found on PATH. The Studio frontend cannot be built without it; install the Node.js LTS release.'
+    }
+    return $npm.Source
+}
+
+# The Studio crate cannot compile until its frontend is built: tauri-build
+# embeds `frontendDist` at compile time. This is the same ordering CI uses.
+function Invoke-StudioFrontend {
+    $studioDir = Join-Path $script:RepoRoot 'apps\discodesk-studio'
+    if (-not (Test-Path -LiteralPath $studioDir)) {
+        throw "The Studio directory is missing: $studioDir"
+    }
+
+    $npm = Get-NpmCommand
+    Push-Location $studioDir
+    try {
+        if (-not (Test-Path -LiteralPath 'node_modules')) {
+            Invoke-External -FilePath $npm -ArgumentList @('ci', '--no-audit', '--no-fund')
+        }
+        Invoke-External -FilePath $npm -ArgumentList @('run', 'build')
+    } finally {
+        Pop-Location
+    }
+}
+
+function Assert-StudioFrontend {
+    $index = Join-Path $script:RepoRoot 'apps\discodesk-studio\dist\index.html'
+    if (-not (Test-Path -LiteralPath $index)) {
+        throw @'
+The Studio frontend has not been built, so the studio crate cannot compile.
+
+Build it with:
+    -Action BuildStudio        (debug)
+    -Action BuildStudioSymbols (optimized with PDBs)
+'@
+    }
+}
+
+function Invoke-Cargo {    param([Parameter(Mandatory = $true)][string[]]$Arguments)
     $cargo = Get-Command cargo.exe -ErrorAction SilentlyContinue
     if (-not $cargo) {
         $candidate = Join-Path $script:CargoBin 'cargo.exe'
@@ -278,6 +319,24 @@ try {
         }
         'Test' {
             Invoke-Cargo -Arguments @('test', '--workspace', '--all-features')
+        }
+        'BuildStudio' {
+            Invoke-StudioFrontend
+            Invoke-Cargo -Arguments @('build', '-p', 'discodesk-studio', '--bins')
+        }
+        'BuildStudioSymbols' {
+            Invoke-StudioFrontend
+            Invoke-Cargo -Arguments @('build', '-p', 'discodesk-studio', '--bins', '--profile', 'release-with-symbols')
+        }
+        'ProbeStudio' {
+            Assert-StudioFrontend
+            $exe = Join-Path $script:RepoRoot 'target\debug\discodesk-studio.exe'
+            if (-not (Test-Path -LiteralPath $exe)) {
+                throw "The Studio binary is missing at $exe. Run -Action BuildStudio first."
+            }
+            Write-Host 'Probing the running engine. Start the engine first; this does not start it.'
+            & $exe --probe
+            exit $LASTEXITCODE
         }
         'OpenIDE' {
             $ide = Get-FullIdePath
