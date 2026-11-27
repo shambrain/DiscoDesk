@@ -40,7 +40,7 @@ param(
     [ValidateSet('debug', 'release-with-symbols', 'release')]
     [string]$Configuration = 'debug',
 
-    [int]$WindowTimeoutSeconds = 30,
+    [int]$WindowTimeoutSeconds = 60,
 
     # Forces the window assertions on or off. By default they are enabled only
     # when an interactive desktop is detected.
@@ -154,6 +154,11 @@ try {
     $windowAppeared = $false
     if ($windowRequired) {
         $title = ''
+        # The first launch in a fresh user profile makes WebView2 create its
+        # runtime profile, which can take noticeably longer than a warm start.
+        # This timeout is deliberately generous for that reason, and the
+        # diagnostic notice below records the handle so a recurrence is
+        # diagnosable rather than mysterious.
         for ($i = 0; $i -lt ($WindowTimeoutSeconds * 4); $i++) {
             Start-Sleep -Milliseconds 250
             if ($studio.HasExited) { break }
@@ -171,6 +176,8 @@ try {
     }
 
     $studio.Refresh()
+    Write-GhCommand 'notice' ("studio-smoke: after window wait - hasExited={0} mainWindowHandle={1} title='{2}'" -f `
+        $studio.HasExited, $studio.MainWindowHandle, $studio.MainWindowTitle)
     if ($studio.HasExited) {
         if ($windowRequired) {
             $failures.Add("the Studio exited during startup with code $($studio.ExitCode)")

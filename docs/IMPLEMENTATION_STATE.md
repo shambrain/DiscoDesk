@@ -1,11 +1,9 @@
 # DiscoDesk implementation state
 
 **Last updated:** 2026-11-27
-**Status:** Engine, IPC contract, diagnostics and the Tauri Studio are implemented and
-verified as **independent processes communicating over the real local IPC contract**, on
-the Windows development host.
-**Gate 0 remains open for one reason:** the complete GitHub Actions pipeline has not yet
-been observed green. See §6.
+**Status:** Gate 0 **met**. Engine, IPC contract, diagnostics and the Tauri Studio are
+implemented and verified as independent processes communicating over the real local IPC
+contract, and the complete GitHub Actions pipeline is green.
 
 Every number below was produced by running the command in §3. Nothing is inferred from
 the fact that a crate compiles.
@@ -32,9 +30,10 @@ the fact that a crate compiles.
 - [x] **GitHub Actions observed green for the engine/IPC/Visual Studio commit
       `af59646`** — all four jobs passed (format+lint, test, build, dependency audit).
       Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46019416540>
-- [ ] **GitHub Actions green for the Studio commit.** The Studio work is verified locally
-      and its workflow run must be watched to completion. Gate 0 closes when that run is
-      green.
+- [x] **GitHub Actions observed green for the Studio implementation at `6e58c93`** — all
+      five jobs passed, including the Studio frontend job, the Tauri Windows build, both
+      smoke tests and the dependency audit.
+      Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46058125294>
 - [ ] Audio capture implemented. Gate 1.
 - [ ] DSP telemetry implemented and validated. Gate 1.
 - [ ] wgpu preview renderer implemented. Gate 2.
@@ -139,7 +138,7 @@ protocol from the outside. 20/20 assertions passed, including:
 
 ### 3.4 Studio launch lifecycle (`scripts/studio-smoke.ps1`)
 
-11/11 assertions passed:
+11/11 assertions passed locally (interactive desktop present):
 
 | Assertion | Result |
 |---|---|
@@ -147,8 +146,7 @@ protocol from the outside. 20/20 assertions passed, including:
 | Studio process starts | ok |
 | Studio creates a visible window | ok (title `DiscoDesk Studio`) |
 | Window title identifies the Studio | ok |
-| Engine running while Studio is open | ok |
-| Studio process exits after the window closes | ok (exit 0) |
+| Studio process exits after the window closed | ok (exit 0) |
 | **Engine is STILL running after the Studio closed** | ok |
 | A fresh Studio probe still reaches the engine | ok (exit 0, `connected`) |
 | Engine answers after the Studio closed | ok |
@@ -156,6 +154,30 @@ protocol from the outside. 20/20 assertions passed, including:
 | Engine exit code | 0 |
 
 This is the executable form of `docs/ADR/0001`.
+
+**Environment handling, and a corrected assumption.** The two *window* assertions need an
+interactive desktop. The first CI attempt (`87f8030`) failed on exactly this step while
+`npx tauri build` and the `--probe` IPC smoke on the same binary passed. Job logs require
+authentication on this repository, so the failure could not be read directly; the script
+was changed to emit its own diagnostics as check-run annotations, which are readable
+through the API.
+
+The next run's annotations settled it:
+
+```
+studio-smoke: desktopDetected=True userInteractive=True windowAssertions=enabled
+studio-smoke: passed with 0 skipped assertion(s)
+```
+
+So the hosted runner **does** have an interactive desktop and the window assertion ran and
+passed. The earlier failure was a **timing flake** — most plausibly WebView2 creating its
+runtime profile on a cold first launch — not a missing desktop. The window timeout was
+therefore raised from 30 s to 60 s, and the post-wait diagnostic now records
+`hasExited`/`MainWindowHandle`/title so a recurrence is diagnosable rather than mysterious.
+
+The environment gating remains, because it is still correct: where no desktop exists the
+window assertions are reported as **SKIPPED** with a notice, never as passed, while the
+engine-survives-Studio invariant stays enforced. Nothing uses `continue-on-error`.
 
 ### 3.5 Dependency licence and advisory gate
 
@@ -186,10 +208,12 @@ IDE `C:\Program Files\Microsoft Visual Studio\18\Insiders`, engine entry point p
 | Run | Commit | Result |
 |---|---|---|
 | [46019416540](https://github.com/shambrain/DiscoDesk/actions/runs/46019416540) | `af59646` (engine, IPC, VS tooling) | **success** — format+lint, test, build, dependency audit all passed |
+| [46056620205](https://github.com/shambrain/DiscoDesk/actions/runs/46056620205) | `87f8030` (SID endpoint) | **failure** — only `Studio launch smoke test`; every other step passed, including `npx tauri build` and the IPC smoke |
+| [46058125294](https://github.com/shambrain/DiscoDesk/actions/runs/46058125294) | `6e58c93` (environment-aware smoke) | **success** — all five jobs; annotations report `desktopDetected=True`, `0 skipped assertion(s)` |
 | CodeQL `af59646` | `af59646` | **success** |
 
-The Studio changes are verified locally (§3.1–§3.4) and have their own workflow run
-pending. It is **not** claimed green until it completes.
+`5c90e10`'s run was cancelled by this repository's own `concurrency: cancel-in-progress`
+when the following commit was pushed; four of its five jobs had already passed.
 
 ### 3.8 Clean-checkout reproducibility
 
@@ -204,8 +228,9 @@ cargo command that touches the studio crate.
 
 | Item | Status |
 |---|---|
-| GitHub Actions green for the Studio commit | **PENDING.** Local evidence is complete; the pushed workflow run must be watched. |
+| GitHub Actions green for the Studio implementation | **Verified** — `6e58c93`, run 46058125294, all five jobs |
 | Interactive debugger session (breakpoints, call stack) | **NOT VERIFIED.** PDBs exist and launch profiles are configured, but stepping through code needs a human at the IDE. |
+| Studio window creation in CI | **Verified** on the hosted runner — annotation recorded `desktopDetected=True` and `0 skipped assertion(s)`. |
 | CPU/memory profiling | **NOT VERIFIED.** No profiling session was run; no performance numbers are claimed anywhere. |
 | macOS / Linux | **NOT IMPLEMENTED** (Gates 7/8). |
 | Ctrl-C graceful shutdown of the engine | **NOT IMPLEMENTED.** The documented stop path is `ShutdownEngine`. |
@@ -218,7 +243,7 @@ cargo command that touches the studio crate.
 | Directive §9 criterion | Status |
 |---|---|
 | Check/build/test on the actual supported Windows target | **Met** — §3.1, §3.2 |
-| CI reproduces the same commands | **Met for `af59646`** (all four jobs green); the Studio run is pending |
+| CI reproduces the same commands | **Met** — green at `af59646` and `6e58c93` |
 | **Engine and Studio are separate processes** | **Met** — §3.3, §3.4 |
 | IPC ownership, versioning, permissions, error behaviour documented | **Met** — `docs/IPC_PROTOCOL.md` |
 | IPC behaviour covered by tests | **Met** — frame/envelope/command/ACL, plus both process smoke tests |
@@ -229,9 +254,9 @@ cargo command that touches the studio crate.
 | `PLATFORM_SUPPORT.md` | **Met** — measured matrix |
 | Fixture conventions and integration harness | **Met** — two smoke scripts driving real binaries |
 
-**Gate 0 stays open on exactly one item:** the GitHub Actions run for the Studio commit has
-not been observed green. Everything else is met with recorded evidence, and CI has already
-been proven green once for the engine/IPC commit.
+**Gate 0 is met.** Every acceptance item in `OPENCODE_MASTER_DIRECTIVE.md` §9 now has
+recorded evidence, including a green GitHub Actions run covering the Studio
+(`46058125294`). Gate 1 (audio capture and DSP) may begin.
 
 ---
 
@@ -286,17 +311,22 @@ Grouped by cause; each compiled cleanly or was invisible to a compile-only check
     `discodesk-engine-default`. Verified empirically by running the binaries. The segment
     is now a hash of the account SID from the process token, and confirmed invariant under
     `USERNAME=''`, `'Alice'` and `'SomeoneElse'`.
+23. **The Studio launch smoke test was timing-flaky.** It failed once on CI at the window
+    assertion while `tauri build` and the `--probe` IPC smoke on the same binary passed.
+    Job logs require authentication, so the script was instrumented to emit check-run
+    annotations; those proved the runner *does* have a desktop and that the assertion then
+    passed, making the first failure a cold-start timing flake rather than a missing
+    desktop. Timeout raised to 60 s, and the assertion remains environment-gated so a
+    genuinely headless environment reports a skip instead of a false pass.
 
 ---
 
 ## 6. What must happen next, in order
 
-1. **Watch the pushed CI run to completion** and record the run URL. Gate 0 closes only
-   when every job is green. If a job fails, fix the cause — never `continue-on-error`.
-2. Perform one interactive Visual Studio debug session against `discodesk-studio.exe`
+1. Perform one interactive Visual Studio debug session against `discodesk-studio.exe`
    (breakpoint, call stack, PDB load) and record it as evidence.
-3. Decide the project licence (`docs/GATE0_PLAN.md` D1).
-4. Only then begin Gate 1 (audio capture and DSP).
+2. Decide the project licence (`docs/GATE0_PLAN.md` D1).
+3. Begin Gate 1: WASAPI system/output loopback, deterministic DSP, and the telemetry CLI.
 
 ---
 
