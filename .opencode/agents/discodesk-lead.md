@@ -35,6 +35,12 @@ permissions:
   - action: subagent
     resource: "steam-distribution-engineer"
     effect: allow
+  - action: subagent
+    resource: "desktop-experience-engineer"
+    effect: allow
+  - action: subagent
+    resource: "product-ux-designer"
+    effect: allow
   - action: skill
     resource: "*"
     effect: allow
