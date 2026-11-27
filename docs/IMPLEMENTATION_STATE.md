@@ -220,7 +220,22 @@ IDE `C:\Program Files\Microsoft Visual Studio\18\Insiders`, engine entry point p
 | [46056620205](https://github.com/shambrain/DiscoDesk/actions/runs/46056620205) | `87f8030` (SID endpoint) | **failure** — only `Studio launch smoke test`; `tauri build` and the IPC smoke passed |
 | [46058125294](https://github.com/shambrain/DiscoDesk/actions/runs/46058125294) | `6e58c93` | **success** — all five jobs |
 | [46062818178](https://github.com/shambrain/DiscoDesk/actions/runs/46062818178) | `77d9f08` | **failure** — only `Studio launch smoke test`; annotations show the window appeared (`mainWindowHandle=197014`, correct title) and the failure was the graceful-close wait |
+| [46063754028](https://github.com/shambrain/DiscoDesk/actions/runs/46063754028) | `4f7f0a2` | **success** — all five jobs, `0 skipped assertion(s)`, and no graceful-close warning, so the close completed within the wait on that run |
 | CodeQL `5c90e10` … `6e58c93` | — | **success** |
+
+The documentation commit that records this table does not alter code; its own run is
+tracked separately and is not asserted here.
+
+Two runs were needed to get the smoke test right, and both failures were real signals
+about the test rather than about the product: the first because job logs are not readable
+without authentication (so the script was instrumented), the second because the test
+asserted OS close timing instead of the lifecycle invariant.
+
+**Observed variability, recorded deliberately:** the Studio's graceful close completes
+within the wait on some runner runs (`4f7f0a2`, no warning) and not others (`77d9f08`,
+where the window had appeared correctly and the process lingered). Locally it exits with
+code 0 every time. Recommended follow-up: handle `WindowEvent::CloseRequested` and call
+`app_handle().exit(0)` so shutdown does not depend on WebView2 teardown timing.
 
 `5c90e10`'s run was cancelled by this repository's own `concurrency: cancel-in-progress`
 when the following commit was pushed; four of its five jobs had already passed.
@@ -337,8 +352,10 @@ Grouped by cause; each compiled cleanly or was invisible to a compile-only check
 
 1. Perform one interactive Visual Studio debug session against `discodesk-studio.exe`
    (breakpoint, call stack, PDB load) and record it as evidence.
-2. Decide the project licence (`docs/GATE0_PLAN.md` D1).
-3. Begin Gate 1: WASAPI system/output loopback, deterministic DSP, and the telemetry CLI.
+2. Make the Studio's shutdown deterministic by handling `WindowEvent::CloseRequested` and
+   calling `app_handle().exit(0)`, so it does not depend on WebView2 teardown timing.
+3. Decide the project licence (`docs/GATE0_PLAN.md` D1).
+4. Begin Gate 1: WASAPI system/output loopback, deterministic DSP, and the telemetry CLI.
 
 ---
 
