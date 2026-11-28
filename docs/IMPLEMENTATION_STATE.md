@@ -34,6 +34,9 @@ the fact that a crate compiles.
       five jobs passed, including the Studio frontend job, the Tauri Windows build, both
       smoke tests and the dependency audit.
       Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46058125294>
+- [x] **GitHub Actions observed green for the Gate 1 implementation at `8ce619f`** — all
+      five jobs plus the extended IPC smoke (audio commands and the telemetry CLI).
+      Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46142411477>
 - [x] **Deterministic Studio shutdown** — explicit exit on `WindowEvent::CloseRequested`;
       measured 270 ms connected / 279 ms disconnected, exit code 0, engine unaffected.
 - [x] **Licensing decision prepared** — `docs/LICENSING_DECISION.md`; the licence itself
@@ -163,6 +166,14 @@ protocol from the outside. 20/20 assertions passed, including:
 | Engine exit code | 0 |
 
 This is the executable form of `docs/ADR/0001`.
+
+**Close latency varies by environment.** Locally the process exits about 270 ms after the
+close. On the hosted runner the same assertion passes, but the process takes noticeably
+longer to actually terminate: the CI annotations recorded **7.4 s connected** and **2.6 s
+disconnected**, both with exit code 0 and no warning annotation. The explicit
+`exit(0)` removes the *liveness* dependency on WebView2 teardown, but the webview still has
+to unwind before the process image goes away. This is recorded rather than smoothed over:
+the test asserts "gone within 15 s, exit code 0", not a fixed latency.
 
 **Environment handling, and two corrected assumptions.** Two things were initially
 inferred wrongly and then corrected from evidence rather than left as guesses. Job logs on
@@ -431,6 +442,13 @@ Payload documented in `docs/IPC_PROTOCOL.md` §6.2. PCM never crosses IPC.
    opened a client; one reported `Unavailable`, while the same test serially reached
    `Streaming`. The tests serialise themselves; the product opens exactly one client.
 
+### 8.4b Clean-checkout reproducibility
+
+A fresh clone of `8ce619f` with no `target/`, `node_modules/` or `dist/` ran
+`scripts/check.ps1` end to end and exited **0**: guards, frontend install/typecheck/tests/
+build, fmt, clippy, 220 tests, build, both smoke tests and `cargo deny`. Gate 1 is
+reproducible from a clean clone, not only from an incrementally built tree.
+
 ### 8.5 Not implemented at Gate 1
 
 - Per-application capture (`GetAudioSources`/`SetAudioSource` refuse, naming Gate 6). This
@@ -444,7 +462,7 @@ Payload documented in `docs/IPC_PROTOCOL.md` §6.2. PCM never crosses IPC.
 | Criterion | Status |
 |---|---|
 | Real WASAPI system/output loopback works | **Met** — measured |
-| Device lifecycle and recovery | **Met** — 2 s identity poll, invalidation retry, bounded backoff |
+| Device lifecycle and recovery | **Implemented, NOT exercised on hardware.** The 2 s identity poll, invalidation retry and bounded backoff exist and are unit-tested, but no default-endpoint switch or physical disconnect was performed on this host, so recovery is not claimed as verified. |
 | Deterministic six-band DSP | **Met** — 56 tests, bitwise determinism |
 | Spectral flux and transient detection | **Met** — relative flux, refractory |
 | Time-correct smoothing | **Met** — coefficients from the actual hop |
@@ -452,4 +470,5 @@ Payload documented in `docs/IPC_PROTOCOL.md` §6.2. PCM never crosses IPC.
 | Real telemetry CLI through existing IPC | **Met** |
 | Studio displays actual telemetry | **Met** |
 | Deterministic and hardware tests pass | **Met** — 220 tests, 4 hardware tests run deliberately |
-| Full CI and CodeQL green | **Pending this commit's run** |
+| Full CI green | **Met** — run [46142411477](https://github.com/shambrain/DiscoDesk/actions/runs/46142411477), all five jobs, `0 skipped assertion(s)` |
+| CodeQL green | **Met** — run [46142411476](https://github.com/shambrain/DiscoDesk/actions/runs/46142411476) |
