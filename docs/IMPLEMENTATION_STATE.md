@@ -34,6 +34,13 @@ the fact that a crate compiles.
       five jobs passed, including the Studio frontend job, the Tauri Windows build, both
       smoke tests and the dependency audit.
       Run: <https://github.com/shambrain/DiscoDesk/actions/runs/46058125294>
+- [x] **Deterministic Studio shutdown** — explicit exit on `WindowEvent::CloseRequested`;
+      measured 270 ms connected / 279 ms disconnected, exit code 0, engine unaffected.
+- [x] **Licensing decision prepared** — `docs/LICENSING_DECISION.md`; the licence itself
+      remains an owner decision and is not selected.
+- [ ] **Interactive Visual Studio debugger session** — procedure, binaries, PDBs and launch
+      profiles verified; the session itself awaits a human at the IDE
+      (`docs/VISUAL_STUDIO_DEBUGGING.md`).
 - [ ] Audio capture implemented. Gate 1.
 - [ ] DSP telemetry implemented and validated. Gate 1.
 - [ ] wgpu preview renderer implemented. Gate 2.
@@ -254,7 +261,7 @@ cargo command that touches the studio crate.
 | Item | Status |
 |---|---|
 | GitHub Actions green for the Studio implementation | **Verified** — `6e58c93`, run 46058125294, all five jobs |
-| Interactive debugger session (breakpoints, call stack) | **NOT VERIFIED.** PDBs exist and launch profiles are configured, but stepping through code needs a human at the IDE. |
+| Interactive debugger session (breakpoints, call stack) | **AWAITING HUMAN.** Binaries, matching PDBs (with embedded Rust source paths) and launch profiles are verified; the procedure is in `docs/VISUAL_STUDIO_DEBUGGING.md`. No interactive result is claimed. |
 | Studio window creation in CI | **Verified** on the hosted runner — annotation recorded `desktopDetected=True` and `0 skipped assertion(s)`. |
 | CPU/memory profiling | **NOT VERIFIED.** No profiling session was run; no performance numbers are claimed anywhere. |
 | macOS / Linux | **NOT IMPLEMENTED** (Gates 7/8). |
@@ -351,11 +358,11 @@ Grouped by cause; each compiled cleanly or was invisible to a compile-only check
 ## 6. What must happen next, in order
 
 1. Perform one interactive Visual Studio debug session against `discodesk-studio.exe`
-   (breakpoint, call stack, PDB load) and record it as evidence.
-2. Make the Studio's shutdown deterministic by handling `WindowEvent::CloseRequested` and
-   calling `app_handle().exit(0)`, so it does not depend on WebView2 teardown timing.
-3. Decide the project licence (`docs/GATE0_PLAN.md` D1).
-4. Begin Gate 1: WASAPI system/output loopback, deterministic DSP, and the telemetry CLI.
+   (breakpoint, call stack, PDB load) and record it as evidence — procedure and verified
+   prerequisites are in `docs/VISUAL_STUDIO_DEBUGGING.md`.
+2. Decide the project licence (`docs/LICENSING_DECISION.md`, `docs/GATE0_PLAN.md` D1).
+   Engineering continues meanwhile; distribution stays blocked until it is decided.
+3. Begin Gate 1: WASAPI system/output loopback, deterministic DSP, and the telemetry CLI.
 
 ---
 

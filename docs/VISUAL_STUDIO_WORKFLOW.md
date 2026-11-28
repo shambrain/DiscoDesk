@@ -168,6 +168,15 @@ artifacts. A separate `release-with-symbols` profile inherits release optimisati
 retains full debug information; use it for optimized debugging and profiling. Keep
 generated PDB files out of Git.
 
+## 6.2 Interactive debugging procedure
+
+A step-by-step procedure for a human-operated debugger session against
+discodesk-studio.exe — launch profile, breakpoint location, how to confirm PDB
+loading, the expected call stack and the evidence to record — is in
+[VISUAL_STUDIO_DEBUGGING.md](VISUAL_STUDIO_DEBUGGING.md). The binaries, PDBs (including
+embedded Rust source paths) and launch profiles are verified; the interactive session
+itself is recorded as awaiting human verification.
+
 ## 7. Profiling and diagnostics
 
 - Use Visual Studio native debugger, call stacks and CPU Usage tooling for supported native debugging scenarios.
