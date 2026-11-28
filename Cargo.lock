@@ -731,6 +731,7 @@ name = "discodesk-engine"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dd-audio",
  "dd-core",
  "dd-diagnostics",
  "dd-ipc",
@@ -748,6 +749,15 @@ dependencies = [
  "tauri",
  "tauri-build",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "discodesk-telemetry"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dd-ipc",
+ "serde_json",
 ]
 
 [[package]]

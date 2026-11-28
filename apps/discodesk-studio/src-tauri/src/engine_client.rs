@@ -253,6 +253,27 @@ impl<C: Connector> EngineClient<C> {
         }
     }
 
+    /// Asks the engine for live audio telemetry.
+    ///
+    /// Returns the raw result object rather than a typed mirror: the payload is
+    /// owned by `dd-audio`, and mapping it into a second Rust type here would be
+    /// exactly the duplicated state this crate is meant to avoid. The frontend
+    /// validates it in `connection.ts`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the transport or protocol error from the exchange.
+    pub fn audio_telemetry(&self) -> Result<serde_json::Value, IpcError> {
+        let response = self.request(Command::GetAudioTelemetry)?;
+        if let Some(error) = &response.error {
+            return Err(IpcError::MalformedPayload(format!(
+                "engine error {}: {}",
+                error.code, error.message
+            )));
+        }
+        Ok(response.result.unwrap_or(serde_json::Value::Null))
+    }
+
     /// Asks the engine for its status and classifies the outcome.
     #[must_use]
     pub fn status(&self) -> EngineView {

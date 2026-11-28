@@ -62,6 +62,7 @@ pub fn run() {
         .manage(StudioState { client })
         .invoke_handler(tauri::generate_handler![
             commands::engine_status,
+            commands::audio_telemetry,
             commands::engine_endpoint,
             commands::engine_disconnect
         ])

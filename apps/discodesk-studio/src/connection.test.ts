@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeAudio,
   describeEngineView,
   describeInvokeError,
   formatUptime,
@@ -164,5 +165,86 @@ describe('formatUptime', () => {
   it('rejects negative and non-finite values', () => {
     expect(formatUptime(-1)).toBe('unknown');
     expect(formatUptime(Number.POSITIVE_INFINITY)).toBe('unknown');
+  });
+});
+
+describe('describeAudio', () => {
+  const streaming = {
+    engineState: 'AudioActive',
+    audio: {
+      state: 'streaming',
+      backend: 'wasapi-loopback',
+      deviceName: 'OUT 1-2 (test)',
+      sampleRate: 48000,
+      channels: 2,
+      encoding: 'f32',
+      stats: { packets: 10, droppedSamples: 2, restarts: 1, lastError: null },
+      dspLastMicros: 25,
+      dspMaxMicros: 80,
+      dspFrames: 50,
+      hopRateHz: 46.875,
+      frame: {
+        loudnessDbfs: -12,
+        levelRms: 0.25,
+        levelPeak: 0.5,
+        spectralFlux: 0.3,
+        onset: false,
+        bands: [0.2, 0.9, 0.4, 0.6, 0.1, 0.3],
+        bandEnvelopes: [0.15, 0.8, 0.35, 0.5, 0.05, 0.25],
+      },
+    },
+  };
+
+  it('maps a streaming response into six bands and metrics', () => {
+    const view = describeAudio(streaming);
+    expect(view.kind).toBe('running');
+    expect(view.label).toBe('Listening');
+    expect(view.device).toBe('OUT 1-2 (test)');
+    expect(view.format).toContain('48000 Hz');
+    expect(view.bands).toHaveLength(6);
+    expect(view.bands[1]?.envelope).toBeCloseTo(0.8);
+    expect(view.bands[1]?.raw).toBeCloseTo(0.9);
+    expect(view.levelDbfs).toBeCloseTo(-12);
+    expect(view.dropped).toBe(2);
+    expect(view.restarts).toBe(1);
+    expect(view.dspMaxMicros).toBe(80);
+  });
+
+  it('clamps out-of-range band values instead of trusting them', () => {
+    const wild = structuredClone(streaming);
+    wild.audio.frame.bands = [5, -1, 0.5, 0.5, 0.5, 0.5] as never;
+    wild.audio.frame.bandEnvelopes = [5, -1, 0.5, 0.5, 0.5, 0.5] as never;
+    const view = describeAudio(wild);
+    expect(view.bands[0]?.envelope).toBe(1);
+    expect(view.bands[1]?.envelope).toBe(0);
+  });
+
+  it('reports silence distinctly and explains the missing frame', () => {
+    const silent = structuredClone(streaming);
+    silent.audio.state = 'silent';
+    silent.audio.frame = null as never;
+    const view = describeAudio(silent);
+    expect(view.kind).toBe('silent');
+    expect(view.detail).toContain('nothing is playing');
+    expect(view.bands.every((band) => band.envelope === 0)).toBe(true);
+  });
+
+  it('surfaces the engine error text for an unavailable capture', () => {
+    const broken = {
+      engineState: 'Listening',
+      audio: {
+        state: 'unavailable',
+        stats: { lastError: 'no default output device is available' },
+      },
+    };
+    const view = describeAudio(broken);
+    expect(view.kind).toBe('unavailable');
+    expect(view.detail).toContain('no default output device');
+  });
+
+  it('rejects a response with no audio object', () => {
+    expect(describeAudio({}).kind).toBe('error');
+    expect(describeAudio(null).kind).toBe('error');
+    expect(describeAudio('nonsense').kind).toBe('error');
   });
 });

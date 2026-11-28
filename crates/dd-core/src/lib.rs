@@ -184,6 +184,40 @@ impl Engine {
         Ok(())
     }
 
+    /// Marks the engine as listening, i.e. owning an audio capture runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::InvalidTransition`] if the current state cannot
+    /// reach `Listening`.
+    pub fn begin_listening(&self) -> EngineResult<()> {
+        let mut inner = self.lock_inner();
+        Self::transition_locked(&mut inner, EngineState::Listening)
+    }
+
+    /// Marks the engine as actively receiving audio.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::InvalidTransition`] if the current state cannot
+    /// reach `AudioActive`.
+    pub fn mark_audio_active(&self) -> EngineResult<()> {
+        let mut inner = self.lock_inner();
+        Self::transition_locked(&mut inner, EngineState::AudioActive)
+    }
+
+    /// Returns from a listening state to `IdleReady`, e.g. after audio capture
+    /// was stopped while the engine keeps running.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::InvalidTransition`] if the current state cannot
+    /// reach `IdleReady`.
+    pub fn end_listening(&self) -> EngineResult<()> {
+        let mut inner = self.lock_inner();
+        Self::transition_locked(&mut inner, EngineState::IdleReady)
+    }
+
     /// Marks a recoverable failure.
     ///
     /// Used when a subsystem reports a condition the engine can survive with a

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "apps/discodesk-engine",
+    "apps/discodesk-telemetry",
     "apps/discodesk-studio/src-tauri",
     "crates/dd-audio",
     "crates/dd-core",

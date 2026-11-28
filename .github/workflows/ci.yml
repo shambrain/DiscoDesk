@@ -136,13 +136,13 @@ jobs:
         shell: pwsh
         run: |
           $deferred = @(
-            'crates/dd-audio','crates/dd-dsp','crates/dd-analysis',
+            'crates/dd-analysis',
             'crates/dd-renderer','crates/dd-package','crates/dd-steam',
             'crates/dd-desktop-automation'
           )
           $present = @($deferred | Where-Object { Test-Path $_ })
           if ($present.Count -gt 0) {
-            Write-Host "Deferred crates present at Gate 0: $($present -join ', ')"
+            Write-Host "Deferred crates present before their gate: $($present -join ', ')"
             exit 1
           }
           if (Test-Path 'crates/dd-platform/src/windows') {

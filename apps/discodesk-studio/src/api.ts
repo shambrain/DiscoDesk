@@ -11,6 +11,11 @@ export async function fetchEngineStatus(): Promise<unknown> {
   return invoke<unknown>('engine_status');
 }
 
+/** Asks the Rust side for live audio telemetry. */
+export async function fetchAudioTelemetry(): Promise<unknown> {
+  return invoke<unknown>('audio_telemetry');
+}
+
 /** Asks the Rust side for the endpoint it is using (diagnostics only). */
 export async function fetchEndpoint(): Promise<string> {
   return invoke<string>('engine_endpoint');

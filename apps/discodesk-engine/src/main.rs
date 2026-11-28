@@ -33,7 +33,10 @@
 
 use std::process::ExitCode;
 
+use std::sync::Mutex;
+
 use clap::Parser;
+use dd_audio::{AudioRuntime, AudioRuntimeConfig, CaptureState};
 use dd_core::{Engine, EngineState};
 use dd_diagnostics::LogOptions;
 use dd_ipc::IpcError;
@@ -74,6 +77,89 @@ struct Cli {
     endpoint: Option<String>,
 }
 
+/// Owns the audio capture runtime and translates it into protocol payloads.
+///
+/// The engine binary is the composition root: `dd-core` owns engine state and
+/// `dd-audio` owns capture. This type is the only place the two meet, so neither
+/// crate has to know about the other.
+struct AudioService {
+    runtime: Mutex<Option<AudioRuntime>>,
+}
+
+impl AudioService {
+    fn new() -> Self {
+        Self {
+            runtime: Mutex::new(None),
+        }
+    }
+
+    /// Starts capture if it is not already running. Idempotent.
+    fn start(&self, engine: &Engine) -> Result<(), String> {
+        let mut guard = self
+            .runtime
+            .lock()
+            .map_err(|_| "the audio runtime lock was poisoned".to_owned())?;
+        if guard.is_none() {
+            *guard = Some(AudioRuntime::start(AudioRuntimeConfig::default()));
+            engine
+                .begin_listening()
+                .map_err(|err| format!("engine state: {err}"))?;
+        }
+        Ok(())
+    }
+
+    /// Stops capture if it is running. Idempotent.
+    fn stop(&self, engine: &Engine) {
+        let taken = self.runtime.lock().ok().and_then(|mut guard| guard.take());
+        if let Some(runtime) = taken {
+            runtime.stop();
+        }
+        // The engine keeps running; only audio ownership ends.
+        let _ = engine.end_listening();
+    }
+
+    /// Builds the telemetry payload for `GetAudioTelemetry`.
+    fn telemetry_json(&self, engine: &Engine) -> serde_json::Value {
+        let guard = self.runtime.lock().ok();
+        let telemetry = guard
+            .as_ref()
+            .and_then(|option| option.as_ref())
+            .map(|runtime| runtime.telemetry());
+
+        // Promote to AudioActive only once frames actually flow, and return to
+        // Listening when they stop. No state is invented that the capture layer
+        // did not report.
+        if let Some(telemetry) = &telemetry {
+            let flowing = telemetry.dsp_frames > 0
+                && matches!(
+                    telemetry.state,
+                    CaptureState::Streaming | CaptureState::Silent
+                );
+            let state = engine.state();
+            if flowing && matches!(state, EngineState::Listening) {
+                let _ = engine.mark_audio_active();
+            } else if !flowing && matches!(state, EngineState::AudioActive) {
+                let _ = engine.end_listening();
+            }
+        }
+
+        let audio = telemetry
+            .as_ref()
+            .map(|value| serde_json::to_value(value).unwrap_or(serde_json::Value::Null))
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "state": "Stopped",
+                    "note": "audio capture is not running; send StartAudio",
+                })
+            });
+
+        serde_json::json!({
+            "engineState": engine.state().name(),
+            "audio": audio,
+        })
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -104,6 +190,7 @@ fn run(cli: &Cli) -> Result<ExitCode, String> {
     let _diagnostics = dd_diagnostics::init(&options).map_err(|err| err.to_string())?;
 
     let engine = Engine::new();
+    let audio = AudioService::new();
     engine.start().map_err(|err| err.to_string())?;
 
     let mut listener = dd_ipc::listener(&endpoint).map_err(|err| match err {
@@ -127,9 +214,18 @@ fn run(cli: &Cli) -> Result<ExitCode, String> {
         "engine listening"
     );
 
-    let outcome = serve(&engine, listener.as_mut());
+    // Gate 1: the engine owns audio capture for as long as it runs. Studio may
+    // stop and restart it over IPC, but closing Studio never does.
+    let audio_start = audio.start(&engine);
+    if let Err(err) = &audio_start {
+        tracing::warn!(target: "discodesk_engine", error = %err, "audio capture did not start");
+        eprintln!("audio capture unavailable: {err}");
+    }
+
+    let outcome = serve(&engine, &audio, listener.as_mut());
 
     // Always attempt a clean stop, even if serving failed.
+    audio.stop(&engine);
     if let Err(err) = engine.stop() {
         tracing::warn!(target: "discodesk_engine", error = %err, "engine stop failed");
     }
@@ -155,7 +251,11 @@ fn default_endpoint() -> String {
 }
 
 /// Accepts and serves connections until a client requests shutdown.
-fn serve(engine: &Engine, listener: &mut dyn Listener) -> Result<(), IpcError> {
+fn serve(
+    engine: &Engine,
+    audio: &AudioService,
+    listener: &mut dyn Listener,
+) -> Result<(), IpcError> {
     loop {
         let mut transport = match listener.accept() {
             Ok(transport) => transport,
@@ -167,7 +267,7 @@ fn serve(engine: &Engine, listener: &mut dyn Listener) -> Result<(), IpcError> {
             }
         };
 
-        match serve_connection(engine, transport.as_mut()) {
+        match serve_connection(engine, audio, transport.as_mut()) {
             Ok(ConnectionOutcome::Shutdown) => return Ok(()),
             Ok(ConnectionOutcome::Closed) => {}
             Err(err) => {
@@ -191,6 +291,7 @@ enum ConnectionOutcome {
 /// Serves one connection.
 fn serve_connection(
     engine: &Engine,
+    audio: &AudioService,
     transport: &mut dyn Transport,
 ) -> Result<ConnectionOutcome, IpcError> {
     loop {
@@ -253,7 +354,7 @@ fn serve_connection(
             "handling command"
         );
 
-        let (response, shutdown) = handle(engine, command, request_id);
+        let (response, shutdown) = handle(engine, audio, command, request_id);
         send_response(transport, &response)?;
 
         if shutdown {
@@ -279,7 +380,12 @@ fn send_response(
 /// Answers one command.
 ///
 /// Returns the response and whether the engine should shut down afterwards.
-fn handle(engine: &Engine, command: Command, request_id: u64) -> (ResponseEnvelope, bool) {
+fn handle(
+    engine: &Engine,
+    audio: &AudioService,
+    command: Command,
+    request_id: u64,
+) -> (ResponseEnvelope, bool) {
     match command {
         Command::GetEngineStatus => {
             let status = engine.status();
@@ -323,6 +429,31 @@ fn handle(engine: &Engine, command: Command, request_id: u64) -> (ResponseEnvelo
             (ResponseEnvelope::ok(request_id, Some(body)), false)
         }
 
+        Command::GetAudioTelemetry => {
+            let body = audio.telemetry_json(engine);
+            (ResponseEnvelope::ok(request_id, Some(body)), false)
+        }
+
+        Command::StartAudio => match audio.start(engine) {
+            Ok(()) => {
+                let body = audio.telemetry_json(engine);
+                (ResponseEnvelope::ok(request_id, Some(body)), false)
+            }
+            Err(err) => {
+                let payload = ErrorPayload::new(dd_ipc::ErrorCode::Internal, err);
+                (ResponseEnvelope::err(request_id, &payload), false)
+            }
+        },
+
+        Command::StopAudio => {
+            audio.stop(engine);
+            let body = serde_json::json!({
+                "engineState": engine.state().name(),
+                "audio": { "state": "Stopped" },
+            });
+            (ResponseEnvelope::ok(request_id, Some(body)), false)
+        }
+
         Command::ShutdownEngine => {
             let body = json!({
                 "state": EngineState::Stopped.name(),
@@ -351,7 +482,8 @@ fn handle(engine: &Engine, command: Command, request_id: u64) -> (ResponseEnvelo
 #[must_use]
 const fn gate_for(command: Command) -> &'static str {
     match command {
-        Command::GetAudioSources | Command::SetAudioSource => "Gate 1 (audio capture)",
+        Command::GetAudioSources => "Gate 6 (per-application capture)",
+        Command::SetAudioSource => "Gate 6 (per-application source selection)",
         Command::Pause | Command::Resume | Command::TogglePause => {
             "Gate 1 (engine lifecycle beyond idle)"
         }
@@ -372,16 +504,20 @@ mod tests {
     fn every_command_has_a_defined_answer() {
         // Guards against a new `Command` variant silently falling through to
         // the catch-all without a gate mapping.
+        let audio = AudioService::new();
         for command in Command::all() {
             let engine = Engine::new();
             engine.start().expect("engine should start");
-            let (response, shutdown) = handle(&engine, *command, 7);
+            let (response, shutdown) = handle(&engine, &audio, *command, 7);
             assert_eq!(response.request_id, 7);
             assert_eq!(response.version, PROTOCOL_VERSION);
             match command {
                 Command::GetEngineStatus
                 | Command::GetPlatformCapabilities
                 | Command::GetDiagnosticsSnapshot
+                | Command::GetAudioTelemetry
+                | Command::StartAudio
+                | Command::StopAudio
                 | Command::ShutdownEngine => assert!(response.is_ok(), "{command} should succeed"),
                 _ => assert!(!response.is_ok(), "{command} should be refused"),
             }
@@ -393,7 +529,7 @@ mod tests {
     fn status_reports_idle_ready() {
         let engine = Engine::new();
         engine.start().expect("start");
-        let (response, _) = handle(&engine, Command::GetEngineStatus, 1);
+        let (response, _) = handle(&engine, &AudioService::new(), Command::GetEngineStatus, 1);
         let body = response.result.expect("status body");
         assert_eq!(body["state"], json!("IdleReady"));
         assert_eq!(body["isRunning"], json!(true));
@@ -404,7 +540,12 @@ mod tests {
     #[test]
     fn capabilities_are_reported_as_unknown_not_supported() {
         let engine = Engine::new();
-        let (response, _) = handle(&engine, Command::GetPlatformCapabilities, 2);
+        let (response, _) = handle(
+            &engine,
+            &AudioService::new(),
+            Command::GetPlatformCapabilities,
+            2,
+        );
         let body = response.result.expect("capability body");
         assert_eq!(body["probed"], json!(false));
         assert_eq!(body["wallpaperHosting"], json!("unknown"));
@@ -415,11 +556,11 @@ mod tests {
     #[test]
     fn deferred_commands_name_their_gate() {
         let engine = Engine::new();
-        let (response, _) = handle(&engine, Command::GetAudioSources, 3);
+        let (response, _) = handle(&engine, &AudioService::new(), Command::GetAudioSources, 3);
         let error = response.error.expect("deferred command must be refused");
         assert_eq!(error.error_code(), Some(dd_ipc::ErrorCode::NotImplemented));
         assert!(
-            error.message.contains("Gate 1"),
+            error.message.contains("Gate 6"),
             "message should name the gate, got: {}",
             error.message
         );

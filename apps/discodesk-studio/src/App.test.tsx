@@ -3,16 +3,50 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('./api', () => ({
   fetchEngineStatus: vi.fn(),
+  fetchAudioTelemetry: vi.fn(),
   fetchEndpoint: vi.fn(),
   disconnectFromEngine: vi.fn(),
 }));
 
 import App from './App';
-import { disconnectFromEngine, fetchEndpoint, fetchEngineStatus } from './api';
+import {
+  disconnectFromEngine,
+  fetchAudioTelemetry,
+  fetchEndpoint,
+  fetchEngineStatus,
+} from './api';
 
 const mockedStatus = vi.mocked(fetchEngineStatus);
+const mockedAudio = vi.mocked(fetchAudioTelemetry);
 const mockedEndpoint = vi.mocked(fetchEndpoint);
 const mockedDisconnect = vi.mocked(disconnectFromEngine);
+
+const audioPayload = {
+  engineState: 'AudioActive',
+  audio: {
+    state: 'streaming',
+    backend: 'wasapi-loopback',
+    deviceName: 'OUT 1-2 (test device)',
+    sampleRate: 44100,
+    channels: 2,
+    encoding: 'f32',
+    bands: undefined,
+    stats: { packets: 42, droppedSamples: 0, restarts: 0, lastError: null },
+    dspLastMicros: 30,
+    dspMaxMicros: 60,
+    dspFrames: 100,
+    hopRateHz: 43.07,
+    frame: {
+      loudnessDbfs: -14.5,
+      levelRms: 0.19,
+      levelPeak: 0.49,
+      spectralFlux: 0.2,
+      onset: true,
+      bands: [0.1, 0.8, 0.6, 0.7, 0.2, 0.5],
+      bandEnvelopes: [0.1, 0.75, 0.55, 0.65, 0.18, 0.45],
+    },
+  },
+};
 
 const connectedPayload = {
   kind: 'connected',
@@ -29,8 +63,10 @@ const connectedPayload = {
 
 beforeEach(() => {
   mockedStatus.mockReset();
+  mockedAudio.mockReset();
   mockedEndpoint.mockReset();
   mockedDisconnect.mockReset();
+  mockedAudio.mockResolvedValue(audioPayload);
   mockedEndpoint.mockResolvedValue(String.raw`\\.\pipe\discodesk-engine-test`);
   mockedDisconnect.mockResolvedValue(undefined);
 });
@@ -80,6 +116,43 @@ describe('App', () => {
     const region = screen.getByText('Engine not running').closest('.status');
     expect(region?.getAttribute('data-kind')).toBe('unavailable');
     expect(region?.getAttribute('data-reachable')).toBe('false');
+  });
+
+  it('renders live audio telemetry with all six bands', async () => {
+    mockedStatus.mockResolvedValue(connectedPayload);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio')).toBeInTheDocument();
+    });
+    expect(screen.getByText('OUT 1-2 (test device)')).toBeInTheDocument();
+    expect(screen.getByText(/44100 Hz/)).toBeInTheDocument();
+    for (const label of [
+      'Sub-bass',
+      'Punch',
+      'Warmth',
+      'Presence',
+      'Brilliance',
+      'Air',
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // The value is exposed as text, not only as a bar width.
+    expect(screen.getByText('0.75')).toBeInTheDocument();
+    expect(screen.getByText(/-14\.5 dBFS/)).toBeInTheDocument();
+    expect(screen.getByText(/onset/)).toBeInTheDocument();
+  });
+
+  it('renders audio as unavailable when the telemetry request fails', async () => {
+    mockedStatus.mockResolvedValue(connectedPayload);
+    mockedAudio.mockRejectedValue(new Error('no audio'));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Audio unavailable')).toBeInTheDocument();
+    });
   });
 
   it('renders a version mismatch with both protocol numbers', async () => {

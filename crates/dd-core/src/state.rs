@@ -146,16 +146,23 @@ impl EngineState {
         !matches!(self, Self::Stopped)
     }
 
-    /// Whether this state is reachable at Gate 0.
+    /// Whether this build can reach this state.
     ///
-    /// The states below `IdleReady` describe subsystems that do not exist yet.
-    /// They are declared for contract completeness and are not produced by any
-    /// transition.
+    /// Since Gate 1 the engine owns an audio capture runtime, so `Listening` and
+    /// `AudioActive` are reachable. The remaining states describe subsystems
+    /// that still do not exist (renderer, desktop host, power policy, analysis);
+    /// they are declared for contract completeness and no transition produces
+    /// them.
     #[must_use]
-    pub const fn is_reachable_at_gate_0(self) -> bool {
+    pub const fn is_reachable(self) -> bool {
         matches!(
             self,
-            Self::Stopped | Self::Starting | Self::IdleReady | Self::ErrorRecoverable
+            Self::Stopped
+                | Self::Starting
+                | Self::IdleReady
+                | Self::Listening
+                | Self::AudioActive
+                | Self::ErrorRecoverable
         )
     }
 
@@ -172,6 +179,16 @@ impl EngineState {
                 | (Self::ErrorRecoverable, Self::Stopped)
                 | (Self::Starting, Self::Stopped)
                 | (Self::IdleReady, Self::Stopped)
+                // Gate 1: audio capture lifecycle.
+                | (Self::IdleReady, Self::Listening)
+                | (Self::Listening, Self::IdleReady)
+                | (Self::Listening, Self::AudioActive)
+                | (Self::AudioActive, Self::Listening)
+                | (Self::Listening, Self::ErrorRecoverable)
+                | (Self::AudioActive, Self::ErrorRecoverable)
+                | (Self::Listening, Self::Stopped)
+                | (Self::AudioActive, Self::Stopped)
+                | (Self::AudioActive, Self::IdleReady)
         )
     }
 }
@@ -273,19 +290,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_gate_0_states_are_reachable() {
+    fn only_the_implemented_states_are_reachable() {
         for state in [
             EngineState::Stopped,
             EngineState::Starting,
             EngineState::IdleReady,
             EngineState::ErrorRecoverable,
         ] {
-            assert!(state.is_reachable_at_gate_0(), "{state} is reachable");
+            assert!(state.is_reachable(), "{state} is reachable");
         }
 
         for state in [
-            EngineState::Listening,
-            EngineState::AudioActive,
             EngineState::Rendering,
             EngineState::PausedByUser,
             EngineState::PausedByFullscreen,
@@ -298,8 +313,8 @@ mod tests {
             EngineState::AnalysisFallback,
         ] {
             assert!(
-                !state.is_reachable_at_gate_0(),
-                "{state} must not be reachable at Gate 0"
+                !state.is_reachable(),
+                "{state} must not be reachable in this build"
             );
         }
     }

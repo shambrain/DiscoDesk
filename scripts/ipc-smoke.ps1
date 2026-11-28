@@ -92,6 +92,16 @@ function Assert-Equal {
     }
 }
 
+function Assert-True {
+    param([bool]$Condition, [string]$What)
+    if (-not $Condition) {
+        $script:failures.Add("$What : assertion failed")
+        Write-Host "  FAIL $What" -ForegroundColor Red
+    } else {
+        Write-Host "  ok   $What" -ForegroundColor Green
+    }
+}
+
 Write-Host "Engine: $exe" -ForegroundColor Cyan
 
 # 1. Ask the engine where its endpoint is (its own default derivation).
@@ -151,9 +161,36 @@ try {
                 Write-Host "  FAIL Studio --probe output was not JSON" -ForegroundColor Red
             } else {
                 Assert-Equal -Actual $probe.kind -Expected 'connected' -What 'Studio reports the engine as connected'
-                Assert-Equal -Actual $probe.status.state -Expected 'IdleReady' -What 'Studio reads the engine state'
+                # The engine owns audio capture from start-up (Gate 1), so the idle state is
+    # Listening rather than IdleReady.
+    $stateOk = $probe.status.state -in @('Listening', 'AudioActive', 'IdleReady')
+    Assert-True -Condition $stateOk -What "Studio reads the engine state ($($probe.status.state))"
                 Assert-Equal -Actual $probe.status.protocolVersion -Expected 1 -What 'Studio and engine agree on the protocol'
             }
+        }
+    }
+
+    # 4c. Telemetry CLI against the same engine.
+    #
+    # Runs before this script opens its pipe, because the engine serves one
+    # connection at a time. It proves the CLI speaks the real protocol rather
+    # than opening WASAPI itself.
+    $telemetry = Join-Path $repoRoot "target\$Configuration\discodesk-telemetry.exe"
+    if (-not (Test-Path -LiteralPath $telemetry)) {
+        $failures.Add("the telemetry CLI is missing at $telemetry")
+        Write-Host "  FAIL telemetry CLI missing: $telemetry" -ForegroundColor Red
+    } else {
+        $telemetryOutput = & $telemetry --json --count 1 --interval 100 --endpoint $endpoint 2>&1
+        Assert-Equal -Actual $LASTEXITCODE -Expected 0 -What 'telemetry CLI exit code'
+        $telemetryJson = $null
+        try { $telemetryJson = ($telemetryOutput | Out-String) | ConvertFrom-Json } catch { }
+        if ($null -eq $telemetryJson) {
+            $failures.Add('the telemetry CLI did not print JSON')
+            Write-Host '  FAIL telemetry CLI output was not JSON' -ForegroundColor Red
+        } else {
+            Assert-True -Condition ($null -ne $telemetryJson.audio) -What 'telemetry CLI reported an audio object'
+            Assert-True -Condition ($null -ne $telemetryJson.engineState) -What 'telemetry CLI reported the engine state'
+            Assert-True -Condition ($null -ne $telemetryJson.audio.stats) -What 'telemetry CLI reported capture counters'
         }
     }
 
@@ -172,7 +209,9 @@ try {
     $response = Read-Frame -Stream $pipe
     Assert-Equal -Actual $response.Version -Expected 1 -What 'response frame version'
     Assert-Equal -Actual $response.Json.request_id -Expected 1 -What 'request_id is echoed'
-    Assert-Equal -Actual $response.Json.result.state -Expected 'IdleReady' -What 'engine state'
+    # Gate 1: the engine owns audio capture from start-up.
+    $engineStateOk = $response.Json.result.state -in @('Listening', 'AudioActive', 'IdleReady')
+    Assert-True -Condition $engineStateOk -What "engine state ($($response.Json.result.state))"
     Assert-Equal -Actual $response.Json.result.isRunning -Expected $true -What 'isRunning'
     Assert-Equal -Actual $response.Json.result.surfaceCount -Expected 0 -What 'surfaceCount (no desktop host yet)'
 
@@ -189,7 +228,27 @@ try {
         -Json '{"version":1,"request_id":3,"command":"GetAudioSources"}'
     $deferred = Read-Frame -Stream $pipe
     Assert-Equal -Actual $deferred.Json.error.code -Expected 1015 -What 'GetAudioSources is NotImplemented'
-    Assert-Equal -Actual ($deferred.Json.error.message -match 'Gate 1') -Expected $true -What 'the refusal names its gate'
+    # GetAudioSources is per-application capture, which is Gate 6, not Gate 1.
+    Assert-Equal -Actual ($deferred.Json.error.message -match 'Gate 6') -Expected $true -What 'the refusal names its gate'
+
+    # 8b. Gate 1 audio commands are implemented and answer coherently.
+    Write-Frame -Stream $pipe -Version $protocolVersion `
+        -Json '{"version":1,"request_id":20,"command":"GetAudioTelemetry"}'
+    $audioTelemetry = Read-Frame -Stream $pipe
+    Assert-Equal -Actual $audioTelemetry.Json.request_id -Expected 20 -What 'audio telemetry is correlated'
+    Assert-True -Condition ($null -ne $audioTelemetry.Json.result.audio) -What 'audio telemetry carries an audio object'
+    Assert-True -Condition ($null -ne $audioTelemetry.Json.result.audio.stats) -What 'audio telemetry carries counters'
+
+    Write-Frame -Stream $pipe -Version $protocolVersion `
+        -Json '{"version":1,"request_id":21,"command":"StartAudio"}'
+    $audioStart = Read-Frame -Stream $pipe
+    Assert-True -Condition ($null -eq $audioStart.Json.error) -What 'StartAudio succeeds'
+
+    Write-Frame -Stream $pipe -Version $protocolVersion `
+        -Json '{"version":1,"request_id":22,"command":"StopAudio"}'
+    $audioStop = Read-Frame -Stream $pipe
+    Assert-True -Condition ($null -eq $audioStop.Json.error) -What 'StopAudio succeeds'
+    Assert-Equal -Actual $audioStop.Json.result.audio.state -Expected 'Stopped' -What 'StopAudio reports Stopped'
 
     # 9. An unknown command must be rejected, not defaulted.
     Write-Frame -Stream $pipe -Version $protocolVersion `

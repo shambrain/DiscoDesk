@@ -254,3 +254,181 @@ export function formatUptime(ms: number): string {
   }
   return `${seconds}s`;
 }
+
+// ---------------------------------------------------------------------------
+// Audio telemetry
+// ---------------------------------------------------------------------------
+
+/** One band in the audio panel. */
+export interface BandView {
+  key: string;
+  label: string;
+  /** Smoothed value the renderer would use, 0..1. */
+  envelope: number;
+  /** Instantaneous value, 0..1. */
+  raw: number;
+}
+
+/** The audio panel's view model. */
+export interface AudioViewModel {
+  kind: 'loading' | 'running' | 'silent' | 'stopped' | 'unavailable' | 'error';
+  label: string;
+  detail?: string;
+  device?: string;
+  format?: string;
+  bands: BandView[];
+  levelDbfs?: number;
+  levelRms?: number;
+  levelPeak?: number;
+  flux?: number;
+  onset: boolean;
+  packets?: number;
+  dropped?: number;
+  restarts?: number;
+  dspLastMicros?: number;
+  dspMaxMicros?: number;
+  dspFrames?: number;
+  hopHz?: number;
+}
+
+const BAND_LABELS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'subBass', label: 'Sub-bass' },
+  { key: 'punch', label: 'Punch' },
+  { key: 'warmth', label: 'Warmth' },
+  { key: 'presence', label: 'Presence' },
+  { key: 'brilliance', label: 'Brilliance' },
+  { key: 'air', label: 'Air' },
+];
+
+function readArrayNumber(source: Record<string, unknown>, key: string, index: number): number {
+  const array = source[key];
+  if (!Array.isArray(array)) {
+    return 0;
+  }
+  const value: unknown = array[index];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(1, Math.max(0, value))
+    : 0;
+}
+
+/** The audio view before the first telemetry response. */
+export function initialAudioView(): AudioViewModel {
+  return {
+    kind: 'loading',
+    label: 'Audio',
+    bands: BAND_LABELS.map((band) => ({ ...band, envelope: 0, raw: 0 })),
+    onset: false,
+  };
+}
+
+function audioKind(state: string): AudioViewModel['kind'] {
+  switch (state) {
+    case 'streaming':
+      return 'running';
+    case 'silent':
+      return 'silent';
+    case 'stopped':
+      return 'stopped';
+    case 'starting':
+    case 'recovering':
+    case 'unavailable':
+      return 'unavailable';
+    case 'failed':
+      return 'error';
+    default:
+      return 'unavailable';
+  }
+}
+
+/**
+ * Translates the engine's `GetAudioTelemetry` result into panel state.
+ *
+ * Every value is taken from the response; nothing is inferred. A missing frame
+ * means "nothing is playing", which is different from zero levels, so the label
+ * says so.
+ */
+export function describeAudio(raw: unknown): AudioViewModel {
+  const bands = BAND_LABELS.map((band) => ({ ...band, envelope: 0, raw: 0 }));
+
+  if (!isRecord(raw)) {
+    return { ...initialAudioView(), kind: 'error', label: 'Audio unavailable' };
+  }
+  const audio = isRecord(raw.audio) ? raw.audio : null;
+  if (audio === null) {
+    return { ...initialAudioView(), kind: 'error', label: 'Audio unavailable' };
+  }
+
+  const state = readString(audio, 'state') ?? 'stopped';
+  const kind = audioKind(state);
+  const device = readString(audio, 'deviceName') ?? undefined;
+  const sampleRate = readNumber(audio, 'sampleRate');
+  const channels = readNumber(audio, 'channels');
+  const encoding = readString(audio, 'encoding');
+  const format =
+    sampleRate !== null && channels !== null
+      ? `${sampleRate} Hz · ${channels} ch${encoding === null ? '' : ` · ${encoding}`}`
+      : undefined;
+
+  const frame = isRecord(audio.frame) ? audio.frame : null;
+  let levelDbfs: number | undefined;
+  let levelRms: number | undefined;
+  let levelPeak: number | undefined;
+  let flux: number | undefined;
+  let onset = false;
+
+  if (frame !== null) {
+    levelDbfs = readNumber(frame, 'loudnessDbfs') ?? undefined;
+    levelRms = readNumber(frame, 'levelRms') ?? undefined;
+    levelPeak = readNumber(frame, 'levelPeak') ?? undefined;
+    flux = readNumber(frame, 'spectralFlux') ?? undefined;
+    onset = readBoolean(frame, 'onset') ?? false;
+    for (let index = 0; index < bands.length; index += 1) {
+      bands[index] = {
+        ...bands[index],
+        envelope: readArrayNumber(frame, 'bandEnvelopes', index),
+        raw: readArrayNumber(frame, 'bands', index),
+      } as BandView;
+    }
+  }
+
+  const stats = isRecord(audio.stats) ? audio.stats : null;
+
+  const label =
+    kind === 'running'
+      ? 'Listening'
+      : kind === 'silent'
+        ? 'Silent'
+        : kind === 'stopped'
+          ? 'Audio stopped'
+          : kind === 'error'
+            ? 'Audio failed'
+            : 'Audio unavailable';
+
+  const detail =
+    kind === 'unavailable' || kind === 'error'
+      ? (stats !== null ? (readString(stats, 'lastError') ?? undefined) : undefined)
+      : frame === null
+        ? 'No audio frames yet; nothing is playing.'
+        : undefined;
+
+  return {
+    kind,
+    label,
+    detail,
+    device,
+    format,
+    bands,
+    levelDbfs,
+    levelRms,
+    levelPeak,
+    flux,
+    onset,
+    packets: stats !== null ? (readNumber(stats, 'packets') ?? undefined) : undefined,
+    dropped: stats !== null ? (readNumber(stats, 'droppedSamples') ?? undefined) : undefined,
+    restarts: stats !== null ? (readNumber(stats, 'restarts') ?? undefined) : undefined,
+    dspLastMicros: readNumber(audio, 'dspLastMicros') ?? undefined,
+    dspMaxMicros: readNumber(audio, 'dspMaxMicros') ?? undefined,
+    dspFrames: readNumber(audio, 'dspFrames') ?? undefined,
+    hopHz: readNumber(audio, 'hopRateHz') ?? undefined,
+  };
+}

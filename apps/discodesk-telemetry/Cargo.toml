@@ -1,0 +1,22 @@
+[package]
+name = "discodesk-telemetry"
+description = "DiscoDesk audio telemetry CLI: reads live capture and DSP state from the engine over IPC."
+publish = false
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "discodesk-telemetry"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+serde_json = { workspace = true }
+dd-ipc = { workspace = true }

@@ -57,8 +57,9 @@ Write-Host "rustc: $((& rustc --version 2>&1))"
 # ---------------------------------------------------------------------------
 if (-not $SkipDeferredGuard) {
     Write-Section 'Gate 0 deferred-crate guard'
-    $deferred = @(        'crates/dd-audio',
-        'crates/dd-dsp',
+    # Gate 1 added dd-audio and dd-dsp; those are real, tested crates now.
+    # Everything below still belongs to a later gate.
+    $deferred = @(
         'crates/dd-analysis',
         'crates/dd-renderer',
         'crates/dd-package',
@@ -67,7 +68,7 @@ if (-not $SkipDeferredGuard) {
     )
     $present = @($deferred | Where-Object { Test-Path $_ })
     if ($present.Count -gt 0) {
-        Write-Host "FAIL: deferred crates present at Gate 0:" -ForegroundColor Red
+        Write-Host "FAIL: deferred crates are present before their gate:" -ForegroundColor Red
         $present | ForEach-Object { Write-Host "  - $_" }
         Write-Host 'Either implement and test them for their own gate, or remove the placeholder.'
         $failed += 'deferred-crate guard'

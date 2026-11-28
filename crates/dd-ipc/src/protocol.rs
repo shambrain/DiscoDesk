@@ -84,6 +84,12 @@ pub enum Command {
     SetPerformancePolicy,
     /// Ask for a diagnostics snapshot.
     GetDiagnosticsSnapshot,
+    /// Ask for the current audio capture telemetry (Gate 1).
+    GetAudioTelemetry,
+    /// Start audio capture (Gate 1). Idempotent.
+    StartAudio,
+    /// Stop audio capture (Gate 1). Idempotent.
+    StopAudio,
     /// Ask the engine to shut down.
     ShutdownEngine,
 }
@@ -110,6 +116,9 @@ impl Command {
             Self::TogglePause => "TogglePause",
             Self::SetPerformancePolicy => "SetPerformancePolicy",
             Self::GetDiagnosticsSnapshot => "GetDiagnosticsSnapshot",
+            Self::GetAudioTelemetry => "GetAudioTelemetry",
+            Self::StartAudio => "StartAudio",
+            Self::StopAudio => "StopAudio",
             Self::ShutdownEngine => "ShutdownEngine",
         }
     }
@@ -134,6 +143,9 @@ impl Command {
             "TogglePause" => Ok(Self::TogglePause),
             "SetPerformancePolicy" => Ok(Self::SetPerformancePolicy),
             "GetDiagnosticsSnapshot" => Ok(Self::GetDiagnosticsSnapshot),
+            "GetAudioTelemetry" => Ok(Self::GetAudioTelemetry),
+            "StartAudio" => Ok(Self::StartAudio),
+            "StopAudio" => Ok(Self::StopAudio),
             "ShutdownEngine" => Ok(Self::ShutdownEngine),
             other => Err(IpcError::UnknownCommand(other.to_owned())),
         }
@@ -157,6 +169,9 @@ impl Command {
             Self::TogglePause,
             Self::SetPerformancePolicy,
             Self::GetDiagnosticsSnapshot,
+            Self::GetAudioTelemetry,
+            Self::StartAudio,
+            Self::StopAudio,
             Self::ShutdownEngine,
         ]
     }
@@ -523,6 +538,9 @@ impl RequestEnvelope {
             | Command::Resume
             | Command::TogglePause
             | Command::GetDiagnosticsSnapshot
+            | Command::GetAudioTelemetry
+            | Command::StartAudio
+            | Command::StopAudio
             | Command::ShutdownEngine => {
                 if self.payload.is_some() {
                     return Err(IpcError::InvalidArgument(format!(

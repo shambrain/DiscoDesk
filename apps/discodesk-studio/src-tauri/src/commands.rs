@@ -37,6 +37,25 @@ pub async fn engine_status(state: State<'_, StudioState>) -> Result<EngineView, 
         .map_err(|err| format!("engine status task failed: {err}"))
 }
 
+/// Returns the engine's live audio telemetry.
+///
+/// Same blocking-thread pattern as `engine_status`: one in-flight call at a
+/// time, guarded by the frontend.
+///
+/// # Errors
+///
+/// Returns an error string only if the task cannot be joined or the exchange
+/// fails at the transport level.
+#[tauri::command]
+pub async fn audio_telemetry(state: State<'_, StudioState>) -> Result<serde_json::Value, String> {
+    let client = Arc::clone(&state.client);
+    tauri::async_runtime::spawn_blocking(move || {
+        client.audio_telemetry().map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|err| format!("audio telemetry task failed: {err}"))?
+}
+
 /// Returns the endpoint the Studio is configured to use, for diagnostics.
 #[tauri::command]
 #[must_use]
