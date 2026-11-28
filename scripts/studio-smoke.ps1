@@ -209,8 +209,11 @@ try {
         $closedGracefully = $false
         try { $closedGracefully = $studio.CloseMainWindow() } catch { $closedGracefully = $false }
 
+        $closeStarted = Get-Date
         if ($studio.WaitForExit(15000)) {
-            Write-Host "  ok   Studio exited after the window closed (code $($studio.ExitCode))" -ForegroundColor Green
+            $closeMs = [int]((Get-Date) - $closeStarted).TotalMilliseconds
+            Write-Host "  ok   Studio exited after the window closed (code $($studio.ExitCode), ${closeMs} ms)" -ForegroundColor Green
+            Write-GhCommand 'notice' ("studio-smoke: connected close took {0} ms, exit code {1}" -f $closeMs, $studio.ExitCode)
             Assert-Equal -Actual $studio.ExitCode -Expected 0 -What 'Studio exit code after a graceful close'
         } else {
             Write-Host '  WARN graceful close did not exit the Studio within 15s; terminating it' -ForegroundColor Yellow
@@ -274,9 +277,76 @@ finally {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 2: closing the Studio while it is disconnected from the engine.
+#
+# This is a separate, isolated scenario: it points the Studio at an endpoint
+# where nothing listens, so it exercises the "no engine" code path without
+# disturbing the engine used above. Closing must still be prompt and clean, and
+# it must not require an engine connection to terminate.
+# ---------------------------------------------------------------------------
+function Test-DisconnectedClose {
+    Write-Host ''
+    Write-Host '=== Scenario: close while disconnected ===' -ForegroundColor Cyan
+
+    $nowhere = if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        '\\.\pipe\discodesk-engine-smoke-no-such-engine'
+    } else {
+        '/nonexistent/discodesk-engine-smoke.sock'
+    }
+
+    $started = Get-Date
+    $studio = Start-Process -FilePath $studioExe -ArgumentList @('--endpoint', $nowhere) -PassThru
+    Assert-True -Condition ($null -ne $studio) -What 'disconnected: Studio process started'
+
+    if ($windowRequired) {
+        $appeared = $false
+        for ($i = 0; $i -lt ($WindowTimeoutSeconds * 4); $i++) {
+            Start-Sleep -Milliseconds 250
+            if ($studio.HasExited) { break }
+            $studio.Refresh()
+            if (-not [string]::IsNullOrWhiteSpace($studio.MainWindowTitle)) { $appeared = $true; break }
+        }
+        Assert-True -Condition $appeared -What 'disconnected: Studio created a visible window'
+    } else {
+        Skip-Assertion -What 'disconnected: Studio created a visible window' -Reason 'no interactive desktop in this environment'
+        Start-Sleep -Seconds 2
+    }
+
+    if ($studio.HasExited) {
+        Skip-Assertion -What 'disconnected: Studio stays alive' -Reason "exited with code $($studio.ExitCode) and no desktop is available"
+        return
+    }
+
+    $closeStarted = Get-Date
+    $closed = $false
+    try { $closed = $studio.CloseMainWindow() } catch { $closed = $false }
+    if (-not $studio.WaitForExit(10000)) {
+        Write-Host '  WARN disconnected close did not exit within 10s; terminating' -ForegroundColor Yellow
+        Write-GhCommand 'warning' 'studio-smoke: disconnected close did not exit within 10s in this environment'
+        try { $studio.Kill() } catch { }
+        $studio.WaitForExit(10000) | Out-Null
+    }
+    $closeMs = [int]((Get-Date) - $closeStarted).TotalMilliseconds
+    $studio.Refresh()
+
+    Assert-True -Condition $studio.HasExited -What 'disconnected: Studio process is gone after the close'
+    if ($studio.HasExited) {
+        Assert-Equal -Actual $studio.ExitCode -Expected 0 -What 'disconnected: Studio exit code'
+        Write-Host ("       close latency: {0} ms (total {1} ms)" -f $closeMs, [int]((Get-Date) - $started).TotalMilliseconds)
+        Write-GhCommand 'notice' ("studio-smoke: disconnected close took {0} ms, exit code {1}" -f $closeMs, $studio.ExitCode)
+    }
+
+    if ($null -ne $studio -and -not $studio.HasExited) {
+        try { $studio.Kill() } catch { }
+    }
+    if ($null -ne $studio) { try { $studio.Dispose() } catch { } }
+}
+
+Test-DisconnectedClose
+
 Write-Host ''
-if ($script:skips.Count -gt 0) {
-    Write-Host "SKIPPED assertions in this environment ($($script:skips.Count)):" -ForegroundColor Yellow
+if ($script:skips.Count -gt 0) {    Write-Host "SKIPPED assertions in this environment ($($script:skips.Count)):" -ForegroundColor Yellow
     $script:skips | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
 }
 

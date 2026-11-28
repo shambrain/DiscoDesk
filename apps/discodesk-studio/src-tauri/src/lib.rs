@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use commands::StudioState;
 use engine_client::{EngineClient, EngineView, PipeConnector};
+use tauri::Manager;
 
 /// Runs when a probe reached the engine. Returned so the binary can map it to
 /// an exit code without owning the reporting.
@@ -64,6 +65,30 @@ pub fn run() {
             commands::engine_endpoint,
             commands::engine_disconnect
         ])
+        // Deterministic shutdown.
+        //
+        // Tauri's default is to leave the process running until the webview has
+        // finished tearing down, and WebView2 teardown latency is not something
+        // this application controls. That made "does closing the window end the
+        // Studio?" depend on the machine: locally it exited at once, while on a
+        // CI runner the process lingered past a 15 s wait.
+        //
+        // Exiting explicitly on CloseRequested makes the lifecycle deterministic
+        // and independent of the webview. It is safe for the product because the
+        // engine is a *different process* (`docs/ADR/0001`): calling exit here
+        // cannot stop playback. No Rust thread holds a lock that needs draining:
+        // the only state is the `EngineClient` mutex, whose holder is the
+        // per-command blocking task, and process exit reclaims it.
+        //
+        // `exit` is idempotent from the caller's perspective: a second close
+        // request cannot arrive once the event loop has been told to stop.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Only the main Studio window exists at Gate 0/1, so any close
+                // request is the user closing the Studio.
+                window.app_handle().exit(0);
+            }
+        })
         .run(tauri::generate_context!())
         .expect("the DiscoDesk Studio window could not be created");
 }
