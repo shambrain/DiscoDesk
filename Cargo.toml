@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "apps/discodesk-engine",
     "apps/discodesk-studio/src-tauri",
+    "crates/dd-audio",
     "crates/dd-core",
     "crates/dd-diagnostics",
     "crates/dd-dsp",
@@ -51,6 +52,15 @@ windows = { version = "0.62.2", default-features = false, features = [
     "Win32_System_Pipes",
     "Win32_System_IO",
     "Win32_System_Threading",
+    # Audio capture (Gate 1)
+    "Win32_Media_Audio",
+    "Win32_Media_Multimedia",
+    "Win32_Media_KernelStreaming",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Devices_FunctionDiscovery",
 ] }
 
 # Tauri v2 (Studio shell only). Versions verified against crates.io on
@@ -65,6 +75,7 @@ tauri-build = { version = "2.7.6" }
 # version is an implicit `*` requirement, which cargo-deny correctly rejects as
 # a wildcard. Keeping the version explicit also documents the intended version
 # of the dependency rather than leaving it implicit.
+dd-audio = { path = "crates/dd-audio", version = "0.1.0" }
 dd-core = { path = "crates/dd-core", version = "0.1.0" }
 dd-diagnostics = { path = "crates/dd-diagnostics", version = "0.1.0" }
 dd-dsp = { path = "crates/dd-dsp", version = "0.1.0" }

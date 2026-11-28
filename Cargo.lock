@@ -608,6 +608,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dd-audio"
+version = "0.1.0"
+dependencies = [
+ "dd-dsp",
+ "serde",
+ "thiserror 2.0.21",
+ "windows",
+]
+
+[[package]]
 name = "dd-core"
 version = "0.1.0"
 dependencies = [

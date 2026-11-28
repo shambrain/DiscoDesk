@@ -1,0 +1,21 @@
+[package]
+name = "dd-audio"
+description = "DiscoDesk audio capture: WASAPI shared-mode system/output loopback with a bounded real-time-safe handoff."
+publish = false
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+dd-dsp = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
