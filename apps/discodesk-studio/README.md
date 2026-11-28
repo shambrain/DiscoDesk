@@ -87,10 +87,20 @@ binaries.
 ## Tests
 
 ```powershell
-npm test                 # 28 frontend tests (Vitest + jsdom + Testing Library)
+npm test                 # 35 frontend tests (Vitest + jsdom + Testing Library)
 cargo test -p discodesk-studio   # 18 backend tests
 powershell -File scripts/studio-smoke.ps1   # real window + engine survival
 ```
+
+## Audio panel
+
+Studio renders the engine's live audio telemetry: device and format, six level meters
+(each with a printed numeric value, so colour is never the only signal), overall level in
+dBFS, an onset indicator, packet/drop counters and DSP timing.
+
+It polls one interval with one in-flight guard, and requests audio separately from engine
+status, so a missing audio subsystem cannot make the connection state look broken. The
+Studio never captures audio itself — the engine owns the device.
 
 ## Deliberate limitations
 

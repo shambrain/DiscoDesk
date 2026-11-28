@@ -27,8 +27,12 @@ DiscoDesk is a planned local-first, cross-platform audio-reactive wallpaper engi
 - CI covering frontend, format, lint, tests, release build, Tauri build, both smoke tests
   and the dependency licence/advisory gate.
 
-**Not implemented:** audio capture, DSP, the wgpu renderer, image analysis, the Windows
-wallpaper host, and everything in M2/M3. No CPU, GPU, memory, compatibility or
+- **Gate 1 audio:** WASAPI system loopback capture, a deterministic six-band DSP, a
+  telemetry CLI, and an audio panel in the Studio. Measured on real hardware; see
+  [docs/AUDIO_PIPELINE.md](docs/AUDIO_PIPELINE.md).
+
+**Not implemented:** the wgpu renderer, image analysis, the Windows wallpaper host, and
+everything in M2/M3. No CPU, GPU, memory, compatibility or
 model-accuracy target is certified until it is measured on supported hardware.
 
 Status detail and evidence: [docs/IMPLEMENTATION_STATE.md](docs/IMPLEMENTATION_STATE.md).
@@ -149,6 +153,20 @@ Ask a single question without opening a window:
 ```powershell
 target\release\discodesk-studio.exe --probe
 ```
+
+### Audio telemetry
+
+With the engine running:
+
+```powershell
+target\release\discodesk-telemetry.exe                    # one human-readable snapshot
+target\release\discodesk-telemetry.exe --watch            # continuous
+target\release\discodesk-telemetry.exe --json --interval 100
+```
+
+The CLI reads from the engine over IPC; it never opens the audio device itself. Nothing
+playing is not an error: WASAPI loopback delivers no packets while the device is silent,
+so the panel reports `Silent` and the bands decay to zero.
 
 ## Visual Studio 2026 development
 

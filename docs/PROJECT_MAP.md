@@ -9,6 +9,7 @@ Use this map to navigate without loading the entire architecture and research co
 - docs/IPC_PROTOCOL.md - the engine/Studio wire contract: framing, envelopes, commands, error codes, security.
 - docs/ADR/ - accepted architecture decisions with rationale and verification.
 - docs/LICENSING_DECISION.md - licence options and obligations; awaiting an owner decision.
+- docs/AUDIO_PIPELINE.md - Gate 1 signal path, maths, real-time rules and measurements.
 - docs/PLATFORM_SUPPORT.md - measured host baseline and per-platform capability status.
 
 ## Crate map (Gate 0)
@@ -18,7 +19,10 @@ Use this map to navigate without loading the entire architecture and research co
 | `crates/dd-ipc` | Framing, envelopes, command/error contract, named-pipe + UDS transports, **shared endpoint derivation** | Implemented, tested |
 | `crates/dd-core` | Authoritative state machine, lifecycle, typed engine error | Implemented, tested |
 | `crates/dd-diagnostics` | Privacy-preserving structured events, path redaction, rotating log | Implemented, tested |
-| `apps/discodesk-engine` | Background engine binary: IPC server, CLI | Implemented, tested |
+| `crates/dd-dsp` | Deterministic FFT, six bands, flux, onsets, envelopes | Implemented, tested |
+| `crates/dd-audio` | WASAPI system loopback, ring, capture stats, recovery | Implemented, tested |
+| `apps/discodesk-engine` | Background engine binary: IPC server, audio ownership, CLI | Implemented, tested |
+| `apps/discodesk-telemetry` | Telemetry CLI over IPC | Implemented, tested |
 | `apps/discodesk-studio/src-tauri` | Tauri v2 shell, `EngineClient`, three IPC commands, `--probe` mode | Implemented, tested |
 | `apps/discodesk-studio/src` | React 19 + TypeScript control UI (connection states only) | Implemented, tested |
 | `dd-audio`, `dd-dsp`, `dd-analysis`, `dd-renderer`, `dd-package`, `dd-steam` | Deferred to their gates | **Must not exist** (enforced by `scripts/check.ps1`) |

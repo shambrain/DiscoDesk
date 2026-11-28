@@ -220,6 +220,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload telemetry CLI
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: discodesk-telemetry-windows
+          path: target/release/discodesk-telemetry.exe
+          if-no-files-found: error
+          retention-days: 14
+
   # ------------------------------------------------------- dependency policy
   # Licence and advisory gate. A separate job so a policy failure is
   # distinguishable from a code failure. deny.toml is the single source of truth.

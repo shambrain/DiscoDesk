@@ -205,9 +205,12 @@ Names are part of the protocol and must not change within a version.
 | `GetEngineStatus` | — | **Implemented**: state, engine version, protocol version, uptime, surface count |
 | `GetPlatformCapabilities` | — | **Implemented**: returns `probed: false` and `unknown` for every capability |
 | `GetDiagnosticsSnapshot` | — | **Implemented**: returns an empty event list plus an explanation |
+| `GetAudioTelemetry` | — | **Implemented (Gate 1)**: capture and DSP snapshot, see §6.2 |
+| `StartAudio` | — | **Implemented (Gate 1)**: starts capture; idempotent |
+| `StopAudio` | — | **Implemented (Gate 1)**: stops capture; idempotent |
 | `ShutdownEngine` | — | **Implemented**: replies, then stops the listener and exits `0` |
-| `GetAudioSources` | — | Refused: Gate 1 |
-| `SetAudioSource` | `{mode, source_id?}` | Refused: Gate 1 |
+| `GetAudioSources` | — | Refused: Gate 6 (per-application capture) |
+| `SetAudioSource` | `{mode, source_id?}` | Refused: Gate 6 |
 | `Pause` / `Resume` / `TogglePause` | — | Refused: Gate 1 (lifecycle beyond idle) |
 | `SetEffectSettings` | `{effect, enabled, intensity}` | Refused: Gate 2 / Gate 4 |
 | `SetVibePreset` | `{preset_id, ...}` | Refused: Gate 4 |
@@ -219,6 +222,51 @@ Names are part of the protocol and must not change within a version.
 A refused command returns `ErrorCode::NotImplemented` (1015) with a message that names
 the gate. This is deliberate: an honest "not yet" is better than a fake success, and it
 lets Studio render an accurate state instead of a generic failure.
+
+### 6.2 Audio telemetry payload
+
+`GetAudioTelemetry`, `StartAudio` and `StopAudio` all return the same shape:
+
+```json
+{
+  "engineState": "AudioActive",
+  "audio": {
+    "state": "streaming",
+    "backend": "wasapi-loopback",
+    "deviceName": "OUT 1-2 (device)",
+    "deviceId": "{0.0.0.00000000}.{guid}",
+    "sampleRate": 44100,
+    "channels": 2,
+    "encoding": "f32",
+    "stats": {
+      "packets": 417, "frames": 183897, "samples": 61740,
+      "silentPackets": 0, "droppedSamples": 0,
+      "restarts": 0, "deviceChanges": 0, "lastError": null
+    },
+    "bufferFill": 441, "bufferCapacity": 65536,
+    "frame": {
+      "timestampNs": 3439347700, "frameIndex": 60, "sampleRate": 44100,
+      "levelRms": 0.19, "levelPeak": 0.49, "loudnessDbfs": -14.4,
+      "smoothedLevel": 0.19,
+      "bands": [0.23, 0.78, 0.64, 0.76, 0.25, 0.68],
+      "bandEnvelopes": [0.32, 0.79, 0.65, 0.76, 0.35, 0.68],
+      "spectralFlux": 0.76, "onset": false, "onsetStrength": 0.0,
+      "isSilent": false
+    },
+    "frameAgeMs": 9,
+    "dspLastMicros": 24, "dspMaxMicros": 55, "dspFrames": 60,
+    "hopRateHz": 43.07
+  }
+}
+```
+
+`frame` is `null` until the first hop completes, and `state` is one of
+`stopped`, `starting`, `streaming`, `silent`, `recovering`, `unavailable`,
+`failed`. `audio.state` is the **capture** state; `engineState` is the engine
+state machine (`Listening`/`AudioActive` once capture is owned).
+
+Only summaries cross IPC. Individual PCM samples never do: the engine passes
+feature frames to its own renderer in-process.
 
 ### 6.1 Capability reporting is honest
 

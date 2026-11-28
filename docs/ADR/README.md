@@ -41,6 +41,7 @@ with this structure:
 | [0010](0010-visual-studio-open-folder-native-debugging.md) | Visual Studio Open Folder integration and native Windows diagnostics | Accepted | 0 |
 | [0011](0011-studio-is-a-thin-ipc-client.md) | The Studio is a thin client of the shared endpoint contract | Accepted | 0 |
 | [0012](0012-accepting-mpl-2-dependencies.md) | Accepting MPL-2.0 dependencies from the Tauri toolchain | Accepted | 0 |
+| [0013](0013-audio-capture-and-dsp-design.md) | Audio capture and DSP design for Gate 1 | Accepted | 1 |
 
 ## Related documents
 

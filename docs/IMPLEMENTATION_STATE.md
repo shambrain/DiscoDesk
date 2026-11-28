@@ -1,9 +1,9 @@
 # DiscoDesk implementation state
 
-**Last updated:** 2026-11-27
-**Status:** Gate 0 **met**. Engine, IPC contract, diagnostics and the Tauri Studio are
-implemented and verified as independent processes communicating over the real local IPC
-contract, and the complete GitHub Actions pipeline is green.
+**Last updated:** 2026-11-28
+**Status:** Gate 0 **met**. Gate 1 (audio capture + deterministic DSP + telemetry) is
+**implemented and measured on real hardware**; see §8. Gate 2 (GPU renderer) has not
+started.
 
 Every number below was produced by running the command in §3. Nothing is inferred from
 the fact that a crate compiles.
@@ -41,8 +41,10 @@ the fact that a crate compiles.
 - [ ] **Interactive Visual Studio debugger session** — procedure, binaries, PDBs and launch
       profiles verified; the session itself awaits a human at the IDE
       (`docs/VISUAL_STUDIO_DEBUGGING.md`).
-- [ ] Audio capture implemented. Gate 1.
-- [ ] DSP telemetry implemented and validated. Gate 1.
+- [x] Audio capture implemented (WASAPI shared-mode system loopback). Gate 1.
+- [x] DSP implemented and validated (six zones, flux, onsets, envelopes). Gate 1.
+- [x] Telemetry CLI reading live state from the engine over IPC. Gate 1.
+- [x] Studio audio panel showing real capture and DSP state. Gate 1.
 - [ ] wgpu preview renderer implemented. Gate 2.
 - [ ] Image analysis and cache implemented. Gate 5.
 - [ ] Windows desktop wallpaper host implemented and tested. Gate 3.
@@ -378,3 +380,76 @@ Grouped by cause; each compiled cleanly or was invisible to a compile-only check
 - [ ] Calm Studio design system and full accessibility review.
 
 These remain unchecked and deferred until M1 Windows MVP stabilization.
+
+---
+
+## 8. Gate 1 — audio capture, DSP and telemetry
+
+**Status: implemented and measured.** Details of the signal path and the maths are in
+`docs/AUDIO_PIPELINE.md`; the design decision is `docs/ADR/0013`.
+
+### 8.1 What exists
+
+| Path | Contents | Tests |
+|---|---|---|
+| `crates/dd-dsp` | radix-2 FFT (verified against a naive DFT), Hann window, six band zones, dBFS normalisation, positive spectral flux, refractory onset detection, hop-derived envelopes, analytic critically damped spring | 56 |
+| `crates/dd-audio` | `WAVEFORMATEX` parsing, PCM-to-mono for f32/i16/i32/u8, bounded SPSC ring, capture stats, WASAPI loopback backend, capture/DSP threads with recovery | 36 + 4 ignored hardware |
+| `apps/discodesk-telemetry` | CLI reading live telemetry over IPC; `--json`, `--watch`, `--interval`, `--count`, `--start`, `--stop` | 2 |
+| Studio audio panel | device, format, six level meters with printed values, level, onset, counters, DSP timing | 35 frontend |
+
+### 8.2 Measured on this host
+
+Windows 10 19045, device `OUT 1-2 (4- BEHRINGER UMC 202HD 192k)`, **44.1 kHz, 2 ch, f32**.
+
+| Scenario | Result |
+|---|---|
+| Rendered silence | bands exactly `[0,0,0,0,0,0]`, −120 dBFS |
+| Pure 1 kHz at 0.5 amplitude | presence **0.86**, every other band **0.00** |
+| 100 Hz + 1 kHz + 8 kHz mix | punch 0.79, presence 0.76, air 0.68 |
+| ~4 s capture | 417 packets, 183,897 samples, **0 dropped**, 0 restarts |
+| DSP per hop (release) | 24–30 µs typical, **55 µs worst** |
+| DSP per hop (debug) | 300–600 µs typical, 1.47 ms worst |
+| Hop budget | 21.3 ms @48 kHz, 23.2 ms @44.1 kHz |
+| Runtime stop (join both threads) | 4–15 ms |
+| After playback stops | presence 0.86 → 0.07 → 0.00, state `Silent` |
+
+Release DSP is well under 1% of one core for analysis. No claim is made for other
+hardware, rates or channel counts.
+
+### 8.3 Protocol
+
+`GetAudioTelemetry`, `StartAudio`, `StopAudio` are additive; `PROTOCOL_VERSION` stays 1
+because an older client never sends them and an older engine answers `UnknownCommand`.
+Payload documented in `docs/IPC_PROTOCOL.md` §6.2. PCM never crosses IPC.
+
+### 8.4 Two defects found only by running it
+
+1. **Envelopes froze when playback stopped.** WASAPI loopback delivers no packets during
+   silence, so the DSP stopped receiving hops. The engine now synthesises silence
+   proportional to elapsed time after a 100 ms gap.
+2. **Concurrent loopback opens were unreliable.** Four hardware tests in parallel each
+   opened a client; one reported `Unavailable`, while the same test serially reached
+   `Streaming`. The tests serialise themselves; the product opens exactly one client.
+
+### 8.5 Not implemented at Gate 1
+
+- Per-application capture (`GetAudioSources`/`SetAudioSource` refuse, naming Gate 6). This
+  host is build 19045, below the documented 20348 threshold.
+- Beat/tempo estimation. Spectral flux is an onset feature, not a beat tracker.
+- A long low-frequency FFT path; sub-bass resolution remains the 2048-point limit.
+- Adaptive percentile normalisation and channel weighting.
+
+### 8.6 Gate 1 acceptance
+
+| Criterion | Status |
+|---|---|
+| Real WASAPI system/output loopback works | **Met** — measured |
+| Device lifecycle and recovery | **Met** — 2 s identity poll, invalidation retry, bounded backoff |
+| Deterministic six-band DSP | **Met** — 56 tests, bitwise determinism |
+| Spectral flux and transient detection | **Met** — relative flux, refractory |
+| Time-correct smoothing | **Met** — coefficients from the actual hop |
+| Engine owns audio processing | **Met** — `AudioRuntime` lives in the engine |
+| Real telemetry CLI through existing IPC | **Met** |
+| Studio displays actual telemetry | **Met** |
+| Deterministic and hardware tests pass | **Met** — 220 tests, 4 hardware tests run deliberately |
+| Full CI and CodeQL green | **Pending this commit's run** |
