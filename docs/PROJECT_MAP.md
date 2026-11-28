@@ -3,16 +3,13 @@
 Use this map to navigate without loading the entire architecture and research corpus for every bounded task.
 
 ## Start here
-- docs/VISUAL_STUDIO_WORKFLOW.md — Visual Studio Open Folder, MSVC/SDK setup, debugging and local commit helper.
-- docs/GATE0_PLAN.md — what Gate 0 builds, what it refuses to build, and how each acceptance item is proven.
-- docs/IPC_PROTOCOL.md — the engine/Studio wire contract: framing, envelopes, commands, error codes, security.
-- docs/ADR/ — accepted architecture decisions with rationale and verification.
-- docs/PLATFORM_SUPPORT.md — measured host baseline and per-platform capability status.
-- AGENTS.md — global invariants.
-- docs/IMPLEMENTATION_STATE.md — actual implementation and current acceptance gate.
-- OPENCODE_MASTER_DIRECTIVE.md — execution policy and acceptance gates.
-- ARCHITECTURE.md — system design.
-- RESEARCH.md — evidence and source register.
+- docs/VISUAL_STUDIO_WORKFLOW.md - Visual Studio Open Folder, MSVC/SDK setup, debugging and commit helpers.
+- docs/VISUAL_STUDIO_DEBUGGING.md - exact procedure for an interactive Studio debug session.
+- docs/GATE0_PLAN.md - what Gate 0 builds, what it refuses to build, and how each item is proven.
+- docs/IPC_PROTOCOL.md - the engine/Studio wire contract: framing, envelopes, commands, error codes, security.
+- docs/ADR/ - accepted architecture decisions with rationale and verification.
+- docs/LICENSING_DECISION.md - licence options and obligations; awaiting an owner decision.
+- docs/PLATFORM_SUPPORT.md - measured host baseline and per-platform capability status.
 
 ## Crate map (Gate 0)
 
