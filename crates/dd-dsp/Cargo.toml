@@ -1,0 +1,17 @@
+[package]
+name = "dd-dsp"
+description = "DiscoDesk deterministic DSP: windowed FFT, six musical bands, spectral flux, onset detection and envelope followers."
+publish = false
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
